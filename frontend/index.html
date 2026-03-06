@@ -42,6 +42,16 @@
           <select id="filterEvent">
             <option value="">Tutti</option>
           </select>
+          <label for="filterChannel">Channel</label>
+          <select id="filterChannel">
+            <option value="">Tutti</option>
+            <option value="stdout">STDOUT</option>
+            <option value="stderr">STDERR</option>
+          </select>
+          <label for="filterSource">Source</label>
+          <select id="filterSource">
+            <option value="">Tutte</option>
+          </select>
           <input id="filterText" type="text" placeholder="cerca testo/evento/metadati">
           <button id="applyFilterBtn">Applica Filtri</button>
           <button id="clearFilterBtn">Reset Filtri</button>
@@ -75,6 +85,7 @@
             <tr>
               <th>Level</th>
               <th>Event</th>
+              <th>Channel</th>
               <th>Message</th>
               <th>Meta</th>
             </tr>

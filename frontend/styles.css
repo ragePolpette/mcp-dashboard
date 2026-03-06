@@ -435,6 +435,44 @@ tbody td {
   font-size: 0.8rem;
 }
 
+.channel-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 110px;
+}
+
+.channel-chip,
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.channel-chip.stdout {
+  color: #9de0c1;
+  border-color: #2d7a59;
+  background: rgba(24, 65, 47, 0.45);
+}
+
+.channel-chip.stderr {
+  color: #ffd0d0;
+  border-color: #9f3232;
+  background: rgba(95, 33, 33, 0.45);
+}
+
+.source-chip {
+  color: #d7e5f3;
+  border-color: #385a7f;
+  background: rgba(18, 35, 53, 0.55);
+}
+
 .message-cell {
   display: grid;
   gap: 8px;
