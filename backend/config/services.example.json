@@ -1,0 +1,65 @@
+{
+  "services": [
+    {
+      "id": "my-mcp-service",
+      "name": "My MCP Service",
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation"
+      ],
+      "rule_sets": [
+        "my-mcp-service"
+      ],
+      "control": {
+        "workdir": "C:/path/to/service/root",
+        "start_command": [
+          "python",
+          "-m",
+          "my_service.server"
+        ],
+        "host": "127.0.0.1",
+        "port": 8999,
+        "startup_timeout_sec": 12,
+        "pid_file": "../../runtime/pids/my-mcp-service.pid",
+        "stdout_log": "C:/path/to/service.out.log",
+        "stderr_log": "C:/path/to/service.err.log",
+        "env": {
+          "EXAMPLE_FLAG": "1"
+        },
+        "options": [
+          {
+            "description": "Esempio opzione segreta per stringa di connessione.",
+            "required": false,
+            "label": "DB Connection String",
+            "default": "",
+            "env_var": "DB_CONNECTION_STRING",
+            "type": "string",
+            "id": "db_connection_string",
+            "secret": true
+          },
+          {
+            "description": "Example boolean option applied at next start/restart.",
+            "required": false,
+            "label": "Strict Mode",
+            "default": false,
+            "env_var": "MY_SERVICE_STRICT",
+            "type": "boolean",
+            "id": "strict_mode",
+            "secret": false
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "C:/path/to/service.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime"
+          ]
+        }
+      ]
+    }
+  ]
+}
