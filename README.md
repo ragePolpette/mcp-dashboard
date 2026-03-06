@@ -42,6 +42,11 @@ Endpoint:
 
 Le opzioni vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
 I servizi avviati dalla dashboard partono con terminale nascosto; stdout/stderr vengono rediretti ai file log configurati e sono consultabili dal pannello `Avanzate`.
+Nel pannello `Avanzate` puoi filtrare i log per:
+- `Level`
+- `Event`
+- `Channel` (`stdout` / `stderr`)
+- `Source` (file log specifico, ad esempio `DEV`, `RUNTIME`, `SERVICE`)
 
 ## Punto 3 (DB dev/prod)
 
@@ -84,7 +89,8 @@ La UI renderizza automaticamente i campi extra in `meta`.
 
 Note operative:
 - il widget `LLM Context` usa un trend basato sugli eventi reali `context.retrieved`, non sul solo volume generico di log
-- i servizi con `health_url` configurata mostrano uno stato runtime piu affidabile (`running` vs `health KO`)
+- i servizi con `health_url` configurata mostrano uno stato runtime piu affidabile (`Running`, `Unhealthy`)
+- durante azioni da UI lo stato operativo espone anche transizioni esplicite (`Starting`, `Stopping`, `Restarting`)
 
 Dettagli:
 - `docs/LOG_PIPELINE_SPEC.md`

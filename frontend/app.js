@@ -7,6 +7,8 @@ const advancedMeta = document.getElementById("advancedMeta");
 const tailInput = document.getElementById("tailInput");
 const filterLevel = document.getElementById("filterLevel");
 const filterEvent = document.getElementById("filterEvent");
+const filterChannel = document.getElementById("filterChannel");
+const filterSource = document.getElementById("filterSource");
 const filterText = document.getElementById("filterText");
 const applyFilterBtn = document.getElementById("applyFilterBtn");
 const clearFilterBtn = document.getElementById("clearFilterBtn");
@@ -35,11 +37,17 @@ const optionsByService = new Map();
 const metricsByService = new Map();
 const queriesByService = new Map();
 const alertsByService = new Map();
-const advancedFilters = { level: "", event: "", text: "" };
+const advancedFilters = { level: "", event: "", channel: "", source: "", text: "" };
 
 function getServiceState(serviceId) {
   if (!stateByService.has(serviceId)) {
-    stateByService.set(serviceId, { entries: [], loading: false, actionBusy: false, optionsBusy: false });
+    stateByService.set(serviceId, {
+      entries: [],
+      loading: false,
+      actionBusy: false,
+      pendingAction: "",
+      optionsBusy: false
+    });
   }
   return stateByService.get(serviceId);
 }
@@ -92,30 +100,102 @@ function isDbService(serviceId) {
   return String(serviceId || "").startsWith("llm-db-");
 }
 
-function runtimeDotClass(runtime) {
+function effectiveRuntimeState(runtime, uiState = null) {
+  const pendingAction = String(uiState?.pendingAction || "");
+  if (uiState?.actionBusy) {
+    if (pendingAction === "start") {
+      return "starting";
+    }
+    if (pendingAction === "stop") {
+      return "stopping";
+    }
+    if (pendingAction === "restart") {
+      return "restarting";
+    }
+  }
   if (!runtime.control_available) {
-    return "info";
+    return "unmanaged";
   }
   if (!runtime.running) {
-    return "warn";
+    return "stopped";
   }
   if (runtime.health_ok === false) {
-    return "warn";
+    return "unhealthy";
   }
-  return "ok";
+  return "running";
 }
 
-function runtimeLabel(runtime) {
-  if (!runtime.control_available) {
+function runtimeDotClass(runtime, uiState = null) {
+  const state = effectiveRuntimeState(runtime, uiState);
+  if (state === "running") {
+    return "ok";
+  }
+  if (state === "unhealthy") {
+    return "error";
+  }
+  if (state === "starting" || state === "restarting" || state === "unmanaged") {
+    return "info";
+  }
+  return "warn";
+}
+
+function runtimeLabel(runtime, uiState = null) {
+  const state = effectiveRuntimeState(runtime, uiState);
+  if (state === "unmanaged") {
     return "Control non configurato";
   }
-  if (!runtime.running) {
+  if (state === "stopped") {
     return "Stopped";
   }
-  if (runtime.health_ok === false) {
-    return "Running (health KO)";
+  if (state === "starting") {
+    return "Starting";
+  }
+  if (state === "stopping") {
+    return "Stopping";
+  }
+  if (state === "restarting") {
+    return "Restarting";
+  }
+  if (state === "unhealthy") {
+    return "Unhealthy";
   }
   return "Running";
+}
+
+function healthLabel(runtime) {
+  if (!runtime.control_available) {
+    return "n/d";
+  }
+  if (!runtime.running) {
+    return "stopped";
+  }
+  if (runtime.health_ok === null || runtime.health_ok === undefined) {
+    return "n/d";
+  }
+  return runtime.health_ok ? "ok" : "ko";
+}
+
+function sourceScopeLabel(source) {
+  const tags = Array.isArray(source?.tags) ? source.tags.map(tag => String(tag).toLowerCase()) : [];
+  if (tags.includes("dev")) {
+    return "DEV";
+  }
+  if (tags.includes("runtime")) {
+    return "RUNTIME";
+  }
+  if (tags.includes("service-log")) {
+    return "SERVICE";
+  }
+  return "OTHER";
+}
+
+function sourceSummaryLabel(source) {
+  const channel = String(source?.channel || "stdout").toUpperCase();
+  const scope = sourceScopeLabel(source);
+  const path = String(source?.path || "");
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const fileName = parts.length ? parts[parts.length - 1] : path || "n/d";
+  return `${scope} ${channel} - ${fileName}`;
 }
 
 function toDisplayText(value) {
@@ -176,6 +256,8 @@ function sparklineSvg(points, color = "#73c2ff", width = 220, height = 44) {
 function syncAdvancedFiltersFromInputs() {
   advancedFilters.level = (filterLevel?.value || "").trim().toUpperCase();
   advancedFilters.event = (filterEvent?.value || "").trim();
+  advancedFilters.channel = (filterChannel?.value || "").trim().toLowerCase();
+  advancedFilters.source = (filterSource?.value || "").trim();
   advancedFilters.text = (filterText?.value || "").trim().toLowerCase();
 }
 
@@ -189,6 +271,18 @@ function entryMatchesAdvancedFilters(entry) {
   if (advancedFilters.event) {
     const entryEvent = String(entry?.event || "");
     if (entryEvent !== advancedFilters.event) {
+      return false;
+    }
+  }
+  if (advancedFilters.channel) {
+    const entryChannel = String(entry?.channel || "").toLowerCase();
+    if (entryChannel !== advancedFilters.channel) {
+      return false;
+    }
+  }
+  if (advancedFilters.source) {
+    const sourcePath = String(entry?.source_path || "");
+    if (sourcePath !== advancedFilters.source) {
       return false;
     }
   }
@@ -232,6 +326,30 @@ function rebuildEventFilterOptions(entries) {
   }
 }
 
+function rebuildSourceFilterOptions(service) {
+  if (!filterSource) {
+    return;
+  }
+  const current = filterSource.value || "";
+  filterSource.innerHTML = "";
+
+  const all = document.createElement("option");
+  all.value = "";
+  all.textContent = "Tutte";
+  filterSource.appendChild(all);
+
+  const sources = Array.isArray(service?.log_sources) ? service.log_sources : [];
+  for (const source of sources) {
+    const option = document.createElement("option");
+    option.value = String(source?.path || "");
+    option.textContent = sourceSummaryLabel(source);
+    filterSource.appendChild(option);
+  }
+
+  const available = sources.map(source => String(source?.path || ""));
+  filterSource.value = available.includes(current) ? current : "";
+}
+
 function clearQueryRows() {
   while (queryBody.firstChild) {
     queryBody.removeChild(queryBody.firstChild);
@@ -247,6 +365,12 @@ function queryMatchesAdvancedFilters(query) {
   }
   if (advancedFilters.event && advancedFilters.event !== "db.query.executed") {
     return false;
+  }
+  if (advancedFilters.source) {
+    const sourcePath = String(query?.source_path || "");
+    if (sourcePath !== advancedFilters.source) {
+      return false;
+    }
   }
   if (advancedFilters.text) {
     const serialized = JSON.stringify(query || {}).toLowerCase();
@@ -419,6 +543,20 @@ function rowFor(entry) {
   const eventTd = document.createElement("td");
   eventTd.textContent = entry.event || "log.line";
 
+  const channelTd = document.createElement("td");
+  const channelWrap = document.createElement("div");
+  channelWrap.className = "channel-cell";
+  const channelValue = String(entry.channel || "stdout").toLowerCase();
+  const channelChip = document.createElement("span");
+  channelChip.className = `channel-chip ${channelValue}`;
+  channelChip.textContent = channelValue.toUpperCase();
+  channelWrap.appendChild(channelChip);
+  const sourceChip = document.createElement("span");
+  sourceChip.className = "source-chip";
+  sourceChip.textContent = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
+  channelWrap.appendChild(sourceChip);
+  channelTd.appendChild(channelWrap);
+
   const msgTd = document.createElement("td");
   const msgWrap = document.createElement("div");
   msgWrap.className = "message-cell";
@@ -451,6 +589,7 @@ function rowFor(entry) {
 
   tr.appendChild(levelTd);
   tr.appendChild(eventTd);
+  tr.appendChild(channelTd);
   tr.appendChild(msgTd);
   tr.appendChild(metaTd);
   return tr;
@@ -506,7 +645,7 @@ function renderCards() {
     head.innerHTML = `
       <div class="widget-title">${service.name}</div>
       <div class="status">
-        <span class="dot ${runtimeDotClass(runtime)}"></span><span>${runtimeLabel(runtime)}</span>
+        <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
         <span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>
       </div>
     `;
@@ -517,7 +656,7 @@ function renderCards() {
     const pidLabel = runtime.pid ? `PID ${runtime.pid}` : "PID n/d";
     const lastEvent = last ? `Ultimo log: ${(last.level || "INFO")} ${(last.event || "log.line")}` : "Ultimo log: n/d";
     const optsCount = service.control?.options_count || 0;
-    meta.textContent = `${endpoint} | ${pidLabel} | ${lastEvent} | Opzioni: ${optsCount}`;
+    meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)} | ${lastEvent} | Opzioni: ${optsCount}`;
 
     const metrics = getServiceMetrics(service.id);
     const kpi = document.createElement("div");
@@ -852,6 +991,7 @@ async function refreshAll(tail = 30) {
 async function controlAction(serviceId, action) {
   const state = getServiceState(serviceId);
   state.actionBusy = true;
+  state.pendingAction = action;
   renderCards();
   try {
     await apiJson(`/api/services/${serviceId}/${action}`, { method: "POST" });
@@ -859,6 +999,7 @@ async function controlAction(serviceId, action) {
     console.error(`Control action failed (${serviceId}:${action})`, error);
   } finally {
     state.actionBusy = false;
+    state.pendingAction = "";
     await Promise.all([
       refreshServiceStatus(serviceId),
       loadServiceTail(serviceId, 60),
@@ -878,15 +1019,24 @@ function stopAdvancedStream() {
     advancedEventSource.close();
     advancedEventSource = null;
   }
+  if (advancedServiceId) {
+    const service = services.find(item => item.id === advancedServiceId);
+    if (service) {
+      renderAdvancedMeta(service);
+    }
+  }
 }
 
 function renderAdvancedMeta(service) {
   const runtime = getRuntimeStatus(service.id);
+  const uiState = getServiceState(service.id);
   const alertPayload = getServiceAlerts(service.id);
   const runtimeText = runtime.control_available
-    ? `${runtime.running ? "running" : "stopped"} @ ${runtime.host || "127.0.0.1"}:${runtime.port || "n/d"}`
+    ? `${runtimeLabel(runtime, uiState)} @ ${runtime.host || "127.0.0.1"}:${runtime.port || "n/d"}`
     : "control not configured";
-  advancedMeta.textContent = `Status: ${runtimeText} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Parsers: ${service.parser_chain.join(", ")} | Rule sets: ${service.rule_sets.join(", ")} | Sources: ${service.log_sources.length}`;
+  const streamState = advancedEventSource ? "active" : "stopped";
+  const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
+  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
 }
 
 async function openAdvanced(serviceId) {
@@ -911,7 +1061,12 @@ async function openAdvanced(serviceId) {
   advancedPanel.classList.remove("hidden");
 
   filterLevel.value = advancedFilters.level || "";
+  filterChannel.value = advancedFilters.channel || "";
   filterText.value = advancedFilters.text || "";
+  rebuildSourceFilterOptions(service);
+  if (advancedFilters.source) {
+    filterSource.value = advancedFilters.source;
+  }
   syncAdvancedFiltersFromInputs();
 
   const tail = Number(tailInput.value || 200);
@@ -956,6 +1111,10 @@ async function reloadAdvanced() {
 
   const service = services.find(s => s.id === advancedServiceId);
   if (service) {
+    rebuildSourceFilterOptions(service);
+    if (advancedFilters.source) {
+      filterSource.value = advancedFilters.source;
+    }
     renderAdvancedMeta(service);
   }
 
@@ -977,6 +1136,10 @@ function startAdvancedStream() {
   stopAdvancedStream();
 
   advancedEventSource = new EventSource(`/api/services/${advancedServiceId}/logs/stream`);
+  const service = services.find(s => s.id === advancedServiceId);
+  if (service) {
+    renderAdvancedMeta(service);
+  }
   advancedEventSource.onmessage = evt => {
     try {
       const entry = JSON.parse(evt.data);
@@ -1004,6 +1167,12 @@ function startAdvancedStream() {
       // ignore malformed chunk
     }
   };
+  advancedEventSource.onerror = () => {
+    const currentService = services.find(s => s.id === advancedServiceId);
+    if (currentService) {
+      renderAdvancedMeta(currentService);
+    }
+  };
 }
 
 loadBtn.addEventListener("click", reloadAdvanced);
@@ -1023,9 +1192,13 @@ applyFilterBtn.addEventListener("click", async () => {
 clearFilterBtn.addEventListener("click", async () => {
   advancedFilters.level = "";
   advancedFilters.event = "";
+  advancedFilters.channel = "";
+  advancedFilters.source = "";
   advancedFilters.text = "";
   filterLevel.value = "";
   filterEvent.value = "";
+  filterChannel.value = "";
+  filterSource.value = "";
   filterText.value = "";
   if (!advancedServiceId) {
     return;
