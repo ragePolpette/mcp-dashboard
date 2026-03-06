@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP Dashboard - Widget Board</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <main class="layout">
+    <header class="topbar">
+      <div>
+        <h1>MCP Dashboard</h1>
+        <p>Vista widget di tutti i servizi MCP, con ingresso rapido al pannello avanzato.</p>
+      </div>
+      <div class="topbar-actions">
+        <button id="refreshAllBtn">Aggiorna Tutto</button>
+      </div>
+    </header>
+
+    <section id="widgetGrid" class="widget-grid"></section>
+
+    <section id="advancedPanel" class="advanced-panel hidden" aria-live="polite">
+      <div class="advanced-header">
+        <div>
+          <h2 id="advancedTitle">Dettaglio servizio</h2>
+          <p id="advancedMeta" class="muted"></p>
+        </div>
+        <div class="advanced-actions">
+          <label for="tailInput">Tail</label>
+          <input id="tailInput" type="number" value="200" min="20" max="5000">
+          <label for="filterLevel">Level</label>
+          <select id="filterLevel">
+            <option value="">Tutti</option>
+            <option value="DEBUG">DEBUG</option>
+            <option value="INFO">INFO</option>
+            <option value="WARN">WARN</option>
+            <option value="ERROR">ERROR</option>
+            <option value="CRITICAL">CRITICAL</option>
+          </select>
+          <label for="filterEvent">Event</label>
+          <select id="filterEvent">
+            <option value="">Tutti</option>
+          </select>
+          <input id="filterText" type="text" placeholder="cerca testo/evento/metadati">
+          <button id="applyFilterBtn">Applica Filtri</button>
+          <button id="clearFilterBtn">Reset Filtri</button>
+          <button id="loadBtn">Ricarica Log</button>
+          <button id="streamBtn">Start Stream</button>
+          <button id="stopBtn">Stop Stream</button>
+        </div>
+      </div>
+
+      <section id="optionsPanel" class="options-panel hidden">
+        <div class="options-header">
+          <h3>Opzioni pre-avvio</h3>
+          <button id="saveOptionsBtn" class="btn-ok">Salva Opzioni</button>
+        </div>
+        <p class="muted">Le opzioni vengono applicate al prossimo Start/Restart del servizio.</p>
+        <div id="optionsForm" class="options-form"></div>
+      </section>
+
+      <section id="alertPanel" class="alert-panel hidden">
+        <div class="alert-panel-header">
+          <h3>Alert attivi</h3>
+          <button id="reloadAlertsBtn">Ricalcola Alert</button>
+        </div>
+        <div id="alertSummary" class="muted"></div>
+        <ul id="alertList" class="alert-list"></ul>
+      </section>
+
+      <div class="log-pane">
+        <table>
+          <thead>
+            <tr>
+              <th>Level</th>
+              <th>Event</th>
+              <th>Message</th>
+              <th>Meta</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+
+      <section id="queryPanel" class="query-panel hidden">
+        <div class="query-panel-header">
+          <h3>Query Inspector (DB)</h3>
+          <button id="reloadQueriesBtn">Ricarica Query</button>
+        </div>
+        <div class="query-pane">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Tool</th>
+                <th>Rows</th>
+                <th>Query</th>
+              </tr>
+            </thead>
+            <tbody id="queryBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

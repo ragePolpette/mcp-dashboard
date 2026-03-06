@@ -1,0 +1,296 @@
+{
+  "services": [
+    {
+      "id": "llm-context",
+      "name": "LLM Context",
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation"
+      ],
+      "rule_sets": [
+        "llm-context"
+      ],
+      "control": {
+        "workdir": "../../../llm_context",
+        "start_command": [
+          "python",
+          "-u",
+          "mcp_server_http.py"
+        ],
+        "host": "127.0.0.1",
+        "port": 8765,
+        "health_url": "http://127.0.0.1:8765/health",
+        "startup_timeout_sec": 15,
+        "pid_file": "../../runtime/pids/llm-context.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-context.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-context.err.log",
+        "options": []
+      },
+      "log_sources": [
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-context.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-context.out.log",
+          "channel": "stdout",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-context.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-context.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llm-memory",
+      "name": "LLM Memory",
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation"
+      ],
+      "rule_sets": [
+        "llm-memory"
+      ],
+      "control": {
+        "workdir": "../../../llm-memory",
+        "start_command": [
+          "python",
+          "-u",
+          "-m",
+          "src.mcp_server.http_server"
+        ],
+        "host": "127.0.0.1",
+        "port": 8767,
+        "health_url": "http://127.0.0.1:8767/health",
+        "startup_timeout_sec": 15,
+        "pid_file": "../../runtime/pids/llm-memory.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-memory.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-memory.err.log",
+        "options": [
+          {
+            "id": "memory_importance_strict",
+            "label": "Strict Importance Compliance",
+            "secret": false,
+            "type": "boolean",
+            "env_var": "MEMORY_IMPORTANCE_STRICT",
+            "description": "Valida in modo stringente i campi compliance prima del write.",
+            "required": false,
+            "default": false
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-memory.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-memory.out.log",
+          "channel": "stdout",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-memory.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-memory.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../llm-memory/logs/http_server.out.log",
+          "channel": "stdout",
+          "tags": [
+            "service-log",
+            "llm-memory"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llm-db-dev-mcp",
+      "name": "LLM DB DEV MCP",
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation"
+      ],
+      "rule_sets": [
+        "llm-db-dev-mcp"
+      ],
+      "control": {
+        "workdir": "../../../llm-db-dev-mcp",
+        "start_command": [
+          "node",
+          "src/server.js"
+        ],
+        "host": "127.0.0.1",
+        "port": 8781,
+        "health_url": "http://127.0.0.1:8781/health",
+        "startup_timeout_sec": 12,
+        "pid_file": "../../runtime/pids/llm-db-dev-mcp.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-db-dev-mcp.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-db-dev-mcp.err.log",
+        "options": [
+          {
+            "type": "string",
+            "required": false,
+            "default": "",
+            "description": "Connection string SQL Server per llm-db-dev-mcp.",
+            "env_var": "DB_DEV_CONNECTION_STRING",
+            "label": "DB DEV Connection String",
+            "id": "db_dev_connection_string",
+            "secret": true
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-db-dev-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-db-dev-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-db-dev-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-db-dev-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "llm-db-prod-mcp",
+      "name": "LLM DB PROD MCP",
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation"
+      ],
+      "rule_sets": [
+        "llm-db-prod-mcp"
+      ],
+      "control": {
+        "workdir": "../../../llm-db-prod-mcp",
+        "start_command": [
+          "node",
+          "src/server.js"
+        ],
+        "host": "127.0.0.1",
+        "port": 8782,
+        "health_url": "http://127.0.0.1:8782/health",
+        "startup_timeout_sec": 12,
+        "pid_file": "../../runtime/pids/llm-db-prod-mcp.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-db-prod-mcp.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-db-prod-mcp.err.log",
+        "options": [
+          {
+            "type": "string",
+            "required": false,
+            "default": "",
+            "description": "Connection string SQL Server per llm-db-prod-mcp (produzione).",
+            "env_var": "DB_PROD_CONNECTION_STRING",
+            "label": "DB PROD Connection String",
+            "id": "db_prod_connection_string",
+            "secret": true
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-db-prod-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-db-prod-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-db-prod-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-db-prod-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        }
+      ]
+    }
+  ]
+}

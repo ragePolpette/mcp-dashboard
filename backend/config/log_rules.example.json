@@ -1,0 +1,28 @@
+{
+  "rule_sets": {
+    "default": [
+      {
+        "contains": "Method Not Allowed",
+        "set": {
+          "event": "transport.method_not_allowed",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "transport"
+        ]
+      }
+    ],
+    "my-mcp-service": [
+      {
+        "regex": "MY_CUSTOM_ERROR_[0-9]+",
+        "set": {
+          "event": "service.custom_error",
+          "level": "ERROR"
+        },
+        "add_tags": [
+          "custom"
+        ]
+      }
+    ]
+  }
+}
