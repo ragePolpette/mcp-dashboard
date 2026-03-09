@@ -1,0 +1,89 @@
+{
+  "defaults": [
+    {
+      "id": "security.origin_rejected",
+      "name": "Origin non consentita rilevata",
+      "kind": "event_count_threshold",
+      "event": "transport.origin_rejected",
+      "window_minutes": 10,
+      "op": ">=",
+      "threshold": 1,
+      "severity": "alert",
+      "message": "Sono presenti richieste con Origin non in allowlist."
+    },
+    {
+      "id": "runtime.error_rate.warn",
+      "name": "Error rate elevato",
+      "kind": "metric_threshold",
+      "metric": "error_rate",
+      "op": ">=",
+      "threshold": 0.05,
+      "severity": "warn",
+      "message": "Error rate >= 5% sulla finestra log corrente."
+    },
+    {
+      "id": "runtime.error_rate.alert",
+      "name": "Error rate critico",
+      "kind": "metric_threshold",
+      "metric": "error_rate",
+      "op": ">=",
+      "threshold": 0.2,
+      "severity": "alert",
+      "message": "Error rate >= 20% sulla finestra log corrente."
+    }
+  ],
+  "services": {
+    "llm-memory": [
+      {
+        "id": "memory.compliance_reject.warn",
+        "name": "Reject compliance memoria",
+        "kind": "event_count_threshold",
+        "event": "memory.compliance_reject",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "warn",
+        "message": "Sono presenti reject di compliance su memory.add."
+      },
+      {
+        "id": "memory.compliance_reject.alert",
+        "name": "Reject compliance memoria multipli",
+        "kind": "event_count_threshold",
+        "event": "memory.compliance_reject",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 3,
+        "severity": "alert",
+        "message": "Reject di compliance ripetuti negli ultimi 10 minuti."
+      }
+    ],
+    "llm-db-dev-mcp": [
+      {
+        "id": "db.dev.max_rows.warn",
+        "name": "Risposta query DEV molto ampia",
+        "kind": "field_max_threshold",
+        "event": "db.query.executed",
+        "field": "row_count",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1500,
+        "severity": "warn",
+        "message": "Almeno una query DEV ha restituito >= 1500 righe."
+      }
+    ],
+    "llm-db-prod-mcp": [
+      {
+        "id": "db.prod.max_rows.warn",
+        "name": "Risposta query PROD ampia",
+        "kind": "field_max_threshold",
+        "event": "db.query.executed",
+        "field": "row_count",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 200,
+        "severity": "warn",
+        "message": "Almeno una query PROD ha restituito >= 200 righe."
+      }
+    ]
+  }
+}
