@@ -1,0 +1,2 @@
+"""MCP Dashboard backend package."""
+

@@ -1,0 +1,167 @@
+{
+  "rule_sets": {
+    "default": [
+      {
+        "contains": "Method Not Allowed",
+        "set": {
+          "event": "transport.method_not_allowed",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "transport",
+          "mcp"
+        ]
+      },
+      {
+        "contains": "Invalid Origin header",
+        "set": {
+          "event": "transport.origin_rejected",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "transport",
+          "security"
+        ]
+      }
+    ],
+    "llm-memory": [
+      {
+        "contains": "\"event\": \"memory.saved\"",
+        "set": {
+          "event": "memory.saved",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "memory",
+          "write"
+        ]
+      },
+      {
+        "contains": "\"event\": \"memory.retrieved\"",
+        "set": {
+          "event": "memory.retrieved",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "memory",
+          "read"
+        ]
+      },
+      {
+        "regex": "MISSING_REQUIRED_FIELDS|MISSING_SURPRISE_SIGNAL|MISSING_INFERENCE_SIGNAL|WRITER_MODEL_UNTRUSTED",
+        "set": {
+          "event": "memory.compliance_reject",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "memory",
+          "compliance"
+        ]
+      },
+      {
+        "contains": "MEMORY_IMPORTANCE_STRICT",
+        "set": {
+          "event": "memory.strict_mode",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "memory",
+          "config"
+        ]
+      },
+      {
+        "contains": "importance_score",
+        "set": {
+          "event": "memory.importance_scored",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "memory",
+          "scoring"
+        ]
+      }
+    ],
+    "llm-context": [
+      {
+        "contains": "\"event\": \"context.retrieved\"",
+        "set": {
+          "event": "context.retrieved",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "llm-context",
+          "retrieval"
+        ]
+      },
+      {
+        "contains": "Embedder warmup failed",
+        "set": {
+          "event": "context.embedder_warmup_failed",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "llm-context",
+          "embedder"
+        ]
+      }
+    ],
+    "llm-db-dev-mcp": [
+      {
+        "contains": "\"event\":\"db.query.executed\"",
+        "set": {
+          "event": "db.query.executed",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "db",
+          "query"
+        ]
+      },
+      {
+        "contains": "Not Found: Invalid or expired session ID",
+        "set": {
+          "event": "transport.invalid_session",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "mcp",
+          "session"
+        ]
+      }
+    ],
+    "llm-db-prod-mcp": [
+      {
+        "contains": "\"event\":\"db.query.executed\"",
+        "set": {
+          "event": "db.query.executed",
+          "level": "INFO"
+        },
+        "add_tags": [
+          "db",
+          "query"
+        ]
+      },
+      {
+        "contains": "Not Found: Invalid or expired session ID",
+        "set": {
+          "event": "transport.invalid_session",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "mcp",
+          "session"
+        ]
+      },
+      {
+        "contains": "DeprecationWarning",
+        "set": {
+          "event": "runtime.deprecation",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "runtime"
+        ]
+      }
+    ]
+  }
+}
