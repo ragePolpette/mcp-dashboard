@@ -16,15 +16,18 @@ Dashboard web locale per monitoring e controllo servizi MCP:
 ## Avvio
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dashboard.ps1
+pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1
 ```
 
 Di default la dashboard parte senza `--reload`, per evitare processi reloader appesi e rendere il lifecycle piu prevedibile.
 Per hot reload esplicito in sviluppo:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\start-dashboard.ps1 -Reload
+pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1 -Reload
 ```
+
+Su Windows, il comportamento di shutdown verificato da questo repository e' validato con PowerShell 7 (`pwsh`).
+Lo script resta avviabile anche da `powershell.exe`, ma il caso di terminazione brutale del processo padre e' stato verificato solo con `pwsh`.
 
 Endpoint:
 - UI: `http://127.0.0.1:8790/`
