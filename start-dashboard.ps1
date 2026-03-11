@@ -11,9 +11,16 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backendDir = Join-Path $projectRoot "backend"
 $venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+$isWindowsHost = $false
+if (Get-Variable IsWindows -ErrorAction SilentlyContinue) {
+    $isWindowsHost = [bool]$IsWindows
+}
+elseif ($env:OS -eq "Windows_NT") {
+    $isWindowsHost = $true
+}
 
 function Initialize-JobSupport {
-    if (-not $IsWindows) {
+    if (-not $isWindowsHost) {
         return
     }
     if ("DashboardJobSupport" -as [type]) {
@@ -119,11 +126,11 @@ public static class DashboardJobSupport
     {
         if (job == IntPtr.Zero)
         {
-            throw new ArgumentException("Invalid Job Object handle.", nameof(job));
+            throw new ArgumentException("Invalid Job Object handle.", "job");
         }
         if (processHandle == IntPtr.Zero)
         {
-            throw new ArgumentException("Invalid process handle.", nameof(processHandle));
+            throw new ArgumentException("Invalid process handle.", "processHandle");
         }
         if (!AssignProcessToJobObject(job, processHandle))
         {
@@ -168,7 +175,7 @@ function Stop-ProcessTree {
         return
     }
 
-    if ($IsWindows) {
+    if ($isWindowsHost) {
         Start-Process -FilePath "taskkill.exe" -ArgumentList @("/PID", $Process.Id, "/T", "/F") -NoNewWindow -Wait | Out-Null
         return
     }
@@ -215,14 +222,14 @@ $jobHandle = [IntPtr]::Zero
 try {
     $uvicornArgs = @("-m", "uvicorn", "app.main:app", "--host", $BindHost, "--port", $Port) + $reloadArgs
 
-    if ($IsWindows) {
+    if ($isWindowsHost) {
         Initialize-JobSupport
         $jobHandle = [DashboardJobSupport]::CreateKillOnCloseJob()
     }
 
     $dashboardProcess = Start-Process -FilePath $pythonExe -ArgumentList $uvicornArgs -WorkingDirectory $backendDir -NoNewWindow -PassThru
 
-    if ($IsWindows -and $jobHandle -ne [IntPtr]::Zero) {
+    if ($isWindowsHost -and $jobHandle -ne [IntPtr]::Zero) {
         [DashboardJobSupport]::AssignProcess($jobHandle, $dashboardProcess.Handle)
     }
 
@@ -236,7 +243,7 @@ catch {
 }
 finally {
     Stop-ProcessTree -Process $dashboardProcess
-    if ($IsWindows -and $jobHandle -ne [IntPtr]::Zero) {
+    if ($isWindowsHost -and $jobHandle -ne [IntPtr]::Zero) {
         [DashboardJobSupport]::Close($jobHandle)
     }
 }
