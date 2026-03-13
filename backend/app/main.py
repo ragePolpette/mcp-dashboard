@@ -35,6 +35,7 @@ pipeline = LogPipeline(rule_engine)
 alert_engine = AlertEngine(ALERTS_CONFIG)
 process_manager = ServiceProcessManager()
 options_manager = ServiceOptionsManager(OPTIONS_STATE)
+options_manager.scrub_persisted_secrets(registry.list_services())
 
 app = FastAPI(title="MCP Dashboard", version="0.3.0")
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")

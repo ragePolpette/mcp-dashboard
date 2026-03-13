@@ -8,22 +8,26 @@ Dashboard web locale per monitoring e controllo servizi MCP:
 - vista widget con tutti i servizi nella stessa schermata
 - stato runtime per servizio (running/stopped/pid/porta)
 - azioni `Start`, `Stop`, `Restart` da UI
-- opzioni pre-avvio per servizio (persistenti)
-- gestione opzioni `secret` (es. connection string DB) non esposte in chiaro in API/UI
+- opzioni pre-avvio per servizio
+- gestione opzioni `secret` (es. connection string DB) non esposte in chiaro in API/UI e non salvate su disco
 - pannello `Avanzate` con log dettagliati e stream SSE
 - pipeline log estensibile (sources + parser chain + rules)
 
 ## Avvio
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1
+pwsh -ExecutionPolicy Bypass -File C:\Users\Gianmarco\Urgewalt\Yetzirah\tools\start-dashboard.ps1
 ```
+
+Script canonico di avvio: [start-dashboard.ps1](/C:/Users/Gianmarco/Urgewalt/Yetzirah/tools/start-dashboard.ps1)
+
+La copia Desktop [Avvia_MCP_Dashboard_Binah.bat](/C:/Users/Gianmarco/Desktop/Avvia_MCP_Dashboard_Binah.bat) e' solo un wrapper di comodita': deve limitarsi ad aprire la dashboard usando lo script canonico in `Yetzirah\tools`, senza logica locale duplicata.
 
 Di default la dashboard parte senza `--reload`, per evitare processi reloader appesi e rendere il lifecycle piu prevedibile.
 Per hot reload esplicito in sviluppo:
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1 -Reload
+pwsh -ExecutionPolicy Bypass -File C:\Users\Gianmarco\Urgewalt\Yetzirah\tools\start-dashboard.ps1 -Reload
 ```
 
 Su Windows, il comportamento di shutdown verificato da questo repository e' validato con PowerShell 7 (`pwsh`).
@@ -46,7 +50,8 @@ Endpoint:
 - `GET /api/services/{service_id}/options`
 - `POST /api/services/{service_id}/options`
 
-Le opzioni vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
+Le opzioni non secret vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
+Le opzioni `secret` restano solo in memoria del backend dashboard finche' la dashboard resta attiva e non vengono mai salvate su disco.
 I servizi avviati dalla dashboard partono con terminale nascosto; stdout/stderr vengono rediretti ai file log configurati e sono consultabili dal pannello `Avanzate`.
 Nel pannello `Avanzate` puoi filtrare i log per:
 - `Level`
@@ -66,6 +71,8 @@ Nel pannello `Avanzate`:
 - esegui `Restart` del servizio DB
 
 Le opzioni secret non vengono restituite in chiaro; viene mostrato solo se il valore e' impostato.
+Se fai `Restart` dalla stessa dashboard web/backend, la connection string resta disponibile in memoria.
+Se riavvii la dashboard, la devi reinserire.
 
 ## Config servizi
 

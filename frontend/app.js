@@ -810,7 +810,7 @@ function renderOptionsForm(serviceId) {
       input.value = opt.secret ? "" : (opt.value ?? "");
       if (opt.secret) {
         input.placeholder = opt.is_set ? "******** (già impostata)" : "inserisci valore";
-        hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore salvato (non mostrato)." : "Valore non impostato."}`.trim();
+        hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore presente solo in memoria della dashboard corrente." : "Valore non impostato."} Non verra' salvato su disco.`.trim();
       } else {
         hint.textContent = opt.description || "";
       }
