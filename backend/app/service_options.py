@@ -17,6 +17,7 @@ class ServiceOptionsManager:
         self.state_path = state_path
         self._lock = threading.Lock()
         self._state: dict[str, dict[str, Any]] = {}
+        self._secret_state: dict[str, dict[str, Any]] = {}
         self._load()
 
     def _load(self) -> None:
@@ -75,6 +76,11 @@ class ServiceOptionsManager:
         return value
 
     def _effective_value(self, service_id: str, option: ServiceOptionDefinition) -> Any:
+        if option.secret:
+            secret_state = self._secret_state.get(service_id, {})
+            if option.option_id in secret_state:
+                return secret_state[option.option_id]
+            return option.default
         service_state = self._state.get(service_id, {})
         if option.option_id in service_state:
             return service_state[option.option_id]
@@ -128,6 +134,7 @@ class ServiceOptionsManager:
         options = {opt.option_id: opt for opt in control.options}
         with self._lock:
             service_state = dict(self._state.get(service.service_id, {}))
+            secret_state = dict(self._secret_state.get(service.service_id, {}))
             for key, raw in raw_values.items():
                 option = options.get(key)
                 if option is None:
@@ -141,17 +148,29 @@ class ServiceOptionsManager:
                         continue
 
                 normalized = self._normalize_value(option, raw)
-                service_state[key] = normalized
+                if option.secret:
+                    secret_state[key] = normalized
+                else:
+                    service_state[key] = normalized
 
             for option in control.options:
-                val = service_state.get(option.option_id, option.default)
+                source_state = secret_state if option.secret else service_state
+                val = source_state.get(option.option_id, option.default)
                 normalized = self._normalize_value(option, val)
                 if option.required:
                     if normalized is None or (isinstance(normalized, str) and not normalized.strip()):
                         raise ValueError(f"Missing required option {option.option_id}")
-                service_state[option.option_id] = normalized
+                if option.secret:
+                    if self._is_set(option, normalized):
+                        secret_state[option.option_id] = normalized
+                else:
+                    service_state[option.option_id] = normalized
 
             self._state[service.service_id] = service_state
+            if secret_state:
+                self._secret_state[service.service_id] = secret_state
+            else:
+                self._secret_state.pop(service.service_id, None)
             self._save()
 
         return self.list_options(service)
@@ -166,6 +185,8 @@ class ServiceOptionsManager:
             for option in control.options:
                 value = self._effective_value(service.service_id, option)
                 normalized = self._normalize_value(option, value)
+                if option.secret and not self._is_set(option, normalized):
+                    continue
                 if normalized is None:
                     continue
                 if option.kind == "boolean":
@@ -173,3 +194,42 @@ class ServiceOptionsManager:
                 else:
                     out[option.env_var] = str(normalized)
             return out
+
+    def scrub_persisted_secrets(self, services: list[ServiceDefinition]) -> bool:
+        changed = False
+        with self._lock:
+            for service in services:
+                control = service.control
+                if control is None:
+                    continue
+
+                secret_ids = {
+                    option.option_id
+                    for option in control.options
+                    if option.secret
+                }
+                if not secret_ids:
+                    continue
+
+                service_state = self._state.get(service.service_id)
+                if not service_state:
+                    continue
+
+                sanitized = {
+                    key: value
+                    for key, value in service_state.items()
+                    if key not in secret_ids
+                }
+                if sanitized == service_state:
+                    continue
+
+                changed = True
+                if sanitized:
+                    self._state[service.service_id] = sanitized
+                else:
+                    self._state.pop(service.service_id, None)
+
+            if changed:
+                self._save()
+
+        return changed

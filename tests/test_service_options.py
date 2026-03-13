@@ -107,8 +107,46 @@ def test_secret_option_not_exposed_and_applied_to_env():
 
         env = manager.options_env(service)
         assert env["DB_PROD_CONNECTION_STRING"] == "Server=.;Database=Prod;"
+        payload = state.read_text(encoding="utf-8")
+        assert "db_prod_connection_string" not in payload
+        assert "Server=.;Database=Prod;" not in payload
 
         # empty secret update does not wipe value
         manager.update_options(service, {"db_prod_connection_string": ""})
         env_after = manager.options_env(service)
         assert env_after["DB_PROD_CONNECTION_STRING"] == "Server=.;Database=Prod;"
+
+
+def test_secret_option_is_ephemeral_across_manager_restart():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "runtime" / "service_options.json"
+        service = _db_prod_service()
+
+        manager = ServiceOptionsManager(state)
+        manager.update_options(service, {"db_prod_connection_string": "Server=.;Database=Prod;"})
+        assert manager.list_options(service)[0]["is_set"] is True
+
+        manager_restarted = ServiceOptionsManager(state)
+        listed = manager_restarted.list_options(service)
+        assert listed[0]["is_set"] is False
+        assert "DB_PROD_CONNECTION_STRING" not in manager_restarted.options_env(service)
+
+
+def test_scrub_persisted_secrets_removes_existing_disk_values():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "runtime" / "service_options.json"
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(
+            '{"services":{"llm-db-prod-mcp":{"db_prod_connection_string":"Server=.;Database=Prod;"}}}',
+            encoding="utf-8",
+        )
+
+        manager = ServiceOptionsManager(state)
+        service = _db_prod_service()
+
+        changed = manager.scrub_persisted_secrets([service])
+
+        assert changed is True
+        payload = state.read_text(encoding="utf-8")
+        assert "db_prod_connection_string" not in payload
+        assert "Server=.;Database=Prod;" not in payload
