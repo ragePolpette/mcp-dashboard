@@ -216,6 +216,26 @@ function formatNumber(value, decimals = 1) {
   return num.toFixed(decimals);
 }
 
+const dateTimeFormatter = new Intl.DateTimeFormat("it-IT", {
+  dateStyle: "short",
+  timeStyle: "medium"
+});
+
+function formatTimestamp(value) {
+  if (value === null || value === undefined) {
+    return "n/d";
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return "n/d";
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return text;
+  }
+  return dateTimeFormatter.format(parsed);
+}
+
 function alertClass(status) {
   if (status === "alert") return "alert-alert";
   if (status === "warn") return "alert-warn";
@@ -391,7 +411,8 @@ function renderQueriesForAdvanced(serviceId) {
     const tr = document.createElement("tr");
 
     const timeTd = document.createElement("td");
-    timeTd.textContent = query.timestamp || "n/d";
+    timeTd.textContent = formatTimestamp(query.timestamp);
+    timeTd.title = query.timestamp || "";
 
     const toolTd = document.createElement("td");
     toolTd.textContent = `${query.tool || "n/d"}${query.mode ? ` (${query.mode})` : ""}`;
@@ -534,6 +555,10 @@ function rowFor(entry) {
   const fields = entry.fields || {};
   const tags = entry.tags || [];
 
+  const timeTd = document.createElement("td");
+  timeTd.textContent = formatTimestamp(entry.timestamp);
+  timeTd.title = entry.timestamp || "";
+
   const levelTd = document.createElement("td");
   const levelBadge = document.createElement("span");
   levelBadge.className = `badge lvl-${level}`;
@@ -587,6 +612,7 @@ function rowFor(entry) {
   pre.textContent = JSON.stringify(clean, null, 2);
   metaTd.appendChild(pre);
 
+  tr.appendChild(timeTd);
   tr.appendChild(levelTd);
   tr.appendChild(eventTd);
   tr.appendChild(channelTd);
@@ -654,7 +680,9 @@ function renderCards() {
     meta.className = "widget-meta";
     const endpoint = runtime.port ? `${runtime.host || "127.0.0.1"}:${runtime.port}` : "n/d";
     const pidLabel = runtime.pid ? `PID ${runtime.pid}` : "PID n/d";
-    const lastEvent = last ? `Ultimo log: ${(last.level || "INFO")} ${(last.event || "log.line")}` : "Ultimo log: n/d";
+    const lastEvent = last
+      ? `Ultimo log: ${formatTimestamp(last.timestamp)} | ${(last.level || "INFO")} ${(last.event || "log.line")}`
+      : "Ultimo log: n/d";
     const optsCount = service.control?.options_count || 0;
     meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)} | ${lastEvent} | Opzioni: ${optsCount}`;
 
@@ -699,7 +727,7 @@ function renderCards() {
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
         const message = entry.message || "";
-        li.innerHTML = `<span class="entry-level">${level}</span>${eventName} - ${message}`;
+        li.innerHTML = `<span class="entry-level">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
         list.appendChild(li);
       }
     }

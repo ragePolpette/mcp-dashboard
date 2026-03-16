@@ -254,6 +254,16 @@
             "label": "DB PROD Connection String",
             "id": "db_prod_connection_string",
             "secret": true
+          },
+          {
+            "type": "string",
+            "required": false,
+            "default": "",
+            "description": "Salt stabile per pseudonimizzazione deterministica cross-session.",
+            "env_var": "ANON_HASH_SALT",
+            "label": "ANON HASH SALT",
+            "id": "anon_hash_salt",
+            "secret": true
           }
         ]
       },
