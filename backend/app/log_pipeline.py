@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import datetime
 from dataclasses import asdict
 from pathlib import Path
 from typing import AsyncIterator
@@ -37,6 +38,7 @@ class LogPipeline:
         service: ServiceDefinition,
         source: ServiceLogSource,
         line: str,
+        fallback_timestamp: str | None = None,
     ) -> ParsedLogEntry:
         entry = ParsedLogEntry(
             service_id=service.service_id,
@@ -44,6 +46,7 @@ class LogPipeline:
             source_path=str(source.path),
             message=line.rstrip("\r\n"),
             raw=line.rstrip("\r\n"),
+            timestamp=fallback_timestamp,
             tags=list(source.tags),
         )
         parse_with_chain(line, entry, service.parser_chain)
@@ -53,8 +56,18 @@ class LogPipeline:
     def read_tail(self, service: ServiceDefinition, tail: int) -> list[dict]:
         entries: list[dict] = []
         for source in service.log_sources:
+            fallback_timestamp = None
+            try:
+                fallback_timestamp = datetime.fromtimestamp(source.path.stat().st_mtime).astimezone().isoformat()
+            except OSError:
+                fallback_timestamp = None
             for line in _tail_lines(source.path, tail):
-                parsed = self.parse_line(service=service, source=source, line=line)
+                parsed = self.parse_line(
+                    service=service,
+                    source=source,
+                    line=line,
+                    fallback_timestamp=fallback_timestamp,
+                )
                 entries.append(asdict(parsed))
         return entries
 
@@ -93,8 +106,14 @@ class LogPipeline:
                 except OSError:
                     continue
 
+                fallback_timestamp = datetime.now().astimezone().isoformat()
                 for line in chunk.splitlines():
-                    parsed = self.parse_line(service=service, source=source, line=line)
+                    parsed = self.parse_line(
+                        service=service,
+                        source=source,
+                        line=line,
+                        fallback_timestamp=fallback_timestamp,
+                    )
                     has_output = True
                     yield asdict(parsed)
 
