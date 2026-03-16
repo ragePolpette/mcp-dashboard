@@ -195,6 +195,22 @@ class ServiceOptionsManager:
                     out[option.env_var] = str(normalized)
             return out
 
+    def missing_required_options(self, service: ServiceDefinition) -> list[str]:
+        control = service.control
+        if control is None:
+            return []
+
+        missing: list[str] = []
+        with self._lock:
+            for option in control.options:
+                if not option.required:
+                    continue
+                value = self._effective_value(service.service_id, option)
+                normalized = self._normalize_value(option, value)
+                if not self._is_set(option, normalized):
+                    missing.append(option.label or option.option_id)
+        return missing
+
     def scrub_persisted_secrets(self, services: list[ServiceDefinition]) -> bool:
         changed = False
         with self._lock:

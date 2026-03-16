@@ -189,6 +189,43 @@ function sourceScopeLabel(source) {
   return "OTHER";
 }
 
+function levelTooltip(level) {
+  const normalized = String(level || "INFO").toUpperCase();
+  const labels = {
+    DEBUG: "Debug: dettagli tecnici utili per diagnosi",
+    INFO: "Info: evento operativo normale",
+    WARN: "Warning: anomalia non bloccante",
+    ERROR: "Error: errore applicativo o operativo",
+    CRITICAL: "Critical: errore critico"
+  };
+  return labels[normalized] || normalized;
+}
+
+function channelTooltip(channel) {
+  const normalized = String(channel || "stdout").toLowerCase();
+  if (normalized === "stdout") {
+    return "STDOUT: output standard del processo";
+  }
+  if (normalized === "stderr") {
+    return "STDERR: error output del processo";
+  }
+  return normalized.toUpperCase();
+}
+
+function sourceScopeTooltip(scope) {
+  const normalized = String(scope || "").toUpperCase();
+  if (normalized === "DEV") {
+    return "DEV: log letti dall'ambiente di sviluppo Yetzirah";
+  }
+  if (normalized === "RUNTIME") {
+    return "RUNTIME: log letti dall'ambiente di deploy Binah";
+  }
+  if (normalized === "SERVICE") {
+    return "SERVICE: log scritti direttamente dal servizio";
+  }
+  return normalized || "Origine log";
+}
+
 function sourceSummaryLabel(source) {
   const channel = String(source?.channel || "stdout").toUpperCase();
   const scope = sourceScopeLabel(source);
@@ -214,6 +251,26 @@ function formatNumber(value, decimals = 1) {
     return "n/d";
   }
   return num.toFixed(decimals);
+}
+
+const dateTimeFormatter = new Intl.DateTimeFormat("it-IT", {
+  dateStyle: "short",
+  timeStyle: "medium"
+});
+
+function formatTimestamp(value) {
+  if (value === null || value === undefined) {
+    return "n/d";
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return "n/d";
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) {
+    return text;
+  }
+  return dateTimeFormatter.format(parsed);
 }
 
 function alertClass(status) {
@@ -391,7 +448,8 @@ function renderQueriesForAdvanced(serviceId) {
     const tr = document.createElement("tr");
 
     const timeTd = document.createElement("td");
-    timeTd.textContent = query.timestamp || "n/d";
+    timeTd.textContent = formatTimestamp(query.timestamp);
+    timeTd.title = query.timestamp || "";
 
     const toolTd = document.createElement("td");
     toolTd.textContent = `${query.tool || "n/d"}${query.mode ? ` (${query.mode})` : ""}`;
@@ -534,10 +592,15 @@ function rowFor(entry) {
   const fields = entry.fields || {};
   const tags = entry.tags || [];
 
+  const timeTd = document.createElement("td");
+  timeTd.textContent = formatTimestamp(entry.timestamp);
+  timeTd.title = entry.timestamp || "";
+
   const levelTd = document.createElement("td");
   const levelBadge = document.createElement("span");
   levelBadge.className = `badge lvl-${level}`;
   levelBadge.textContent = level;
+  levelBadge.title = levelTooltip(level);
   levelTd.appendChild(levelBadge);
 
   const eventTd = document.createElement("td");
@@ -550,10 +613,13 @@ function rowFor(entry) {
   const channelChip = document.createElement("span");
   channelChip.className = `channel-chip ${channelValue}`;
   channelChip.textContent = channelValue.toUpperCase();
+  channelChip.title = channelTooltip(channelValue);
   channelWrap.appendChild(channelChip);
   const sourceChip = document.createElement("span");
   sourceChip.className = "source-chip";
-  sourceChip.textContent = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
+  const sourceScope = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
+  sourceChip.textContent = sourceScope;
+  sourceChip.title = sourceScopeTooltip(sourceScope);
   channelWrap.appendChild(sourceChip);
   channelTd.appendChild(channelWrap);
 
@@ -587,6 +653,7 @@ function rowFor(entry) {
   pre.textContent = JSON.stringify(clean, null, 2);
   metaTd.appendChild(pre);
 
+  tr.appendChild(timeTd);
   tr.appendChild(levelTd);
   tr.appendChild(eventTd);
   tr.appendChild(channelTd);
@@ -654,7 +721,9 @@ function renderCards() {
     meta.className = "widget-meta";
     const endpoint = runtime.port ? `${runtime.host || "127.0.0.1"}:${runtime.port}` : "n/d";
     const pidLabel = runtime.pid ? `PID ${runtime.pid}` : "PID n/d";
-    const lastEvent = last ? `Ultimo log: ${(last.level || "INFO")} ${(last.event || "log.line")}` : "Ultimo log: n/d";
+    const lastEvent = last
+      ? `Ultimo log: ${formatTimestamp(last.timestamp)} | ${(last.level || "INFO")} ${(last.event || "log.line")}`
+      : "Ultimo log: n/d";
     const optsCount = service.control?.options_count || 0;
     meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)} | ${lastEvent} | Opzioni: ${optsCount}`;
 
@@ -699,7 +768,7 @@ function renderCards() {
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
         const message = entry.message || "";
-        li.innerHTML = `<span class="entry-level">${level}</span>${eventName} - ${message}`;
+        li.innerHTML = `<span class="entry-level" title="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
         list.appendChild(li);
       }
     }
@@ -809,6 +878,8 @@ function renderOptionsForm(serviceId) {
       input.type = opt.secret ? "password" : "text";
       input.value = opt.secret ? "" : (opt.value ?? "");
       if (opt.secret) {
+        input.autocomplete = "new-password";
+        input.spellcheck = false;
         input.placeholder = opt.is_set ? "******** (già impostata)" : "inserisci valore";
         hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore presente solo in memoria della dashboard corrente." : "Valore non impostato."} Non verra' salvato su disco.`.trim();
       } else {

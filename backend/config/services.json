@@ -174,7 +174,7 @@
         "options": [
           {
             "type": "string",
-            "required": false,
+            "required": true,
             "default": "",
             "description": "Connection string SQL Server per llm-db-dev-mcp.",
             "env_var": "DB_DEV_CONNECTION_STRING",
@@ -247,12 +247,22 @@
         "options": [
           {
             "type": "string",
-            "required": false,
+            "required": true,
             "default": "",
             "description": "Connection string SQL Server per llm-db-prod-mcp (produzione).",
             "env_var": "DB_PROD_CONNECTION_STRING",
             "label": "DB PROD Connection String",
             "id": "db_prod_connection_string",
+            "secret": true
+          },
+          {
+            "type": "string",
+            "required": false,
+            "default": "",
+            "description": "Salt stabile per pseudonimizzazione deterministica cross-session.",
+            "env_var": "ANON_HASH_SALT",
+            "label": "ANON HASH SALT",
+            "id": "anon_hash_salt",
             "secret": true
           }
         ]
