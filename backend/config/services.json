@@ -22,7 +22,7 @@
         "host": "127.0.0.1",
         "port": 8765,
         "health_url": "http://127.0.0.1:8765/health",
-        "startup_timeout_sec": 15,
+        "startup_timeout_sec": 60,
         "pid_file": "../../runtime/pids/llm-context.pid",
         "stdout_log": "../../../tools/_dev_runtime_logs/llm-context.out.log",
         "stderr_log": "../../../tools/_dev_runtime_logs/llm-context.err.log",
