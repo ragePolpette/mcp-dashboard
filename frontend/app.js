@@ -258,6 +258,21 @@ const dateTimeFormatter = new Intl.DateTimeFormat("it-IT", {
   timeStyle: "medium"
 });
 
+function applyTooltip(element, text) {
+  const tooltipText = String(text || "").trim();
+  if (!element || !tooltipText) {
+    return element;
+  }
+  element.title = tooltipText;
+  element.setAttribute("data-tooltip", tooltipText);
+  element.setAttribute("aria-label", tooltipText);
+  element.classList.add("has-tooltip");
+  if (!element.hasAttribute("tabindex")) {
+    element.tabIndex = 0;
+  }
+  return element;
+}
+
 function formatTimestamp(value) {
   if (value === null || value === undefined) {
     return "n/d";
@@ -449,7 +464,7 @@ function renderQueriesForAdvanced(serviceId) {
 
     const timeTd = document.createElement("td");
     timeTd.textContent = formatTimestamp(query.timestamp);
-    timeTd.title = query.timestamp || "";
+    applyTooltip(timeTd, query.timestamp || "Timestamp non disponibile");
 
     const toolTd = document.createElement("td");
     toolTd.textContent = `${query.tool || "n/d"}${query.mode ? ` (${query.mode})` : ""}`;
@@ -594,13 +609,13 @@ function rowFor(entry) {
 
   const timeTd = document.createElement("td");
   timeTd.textContent = formatTimestamp(entry.timestamp);
-  timeTd.title = entry.timestamp || "";
+  applyTooltip(timeTd, entry.timestamp || "Timestamp stimato dalla dashboard");
 
   const levelTd = document.createElement("td");
   const levelBadge = document.createElement("span");
   levelBadge.className = `badge lvl-${level}`;
   levelBadge.textContent = level;
-  levelBadge.title = levelTooltip(level);
+  applyTooltip(levelBadge, levelTooltip(level));
   levelTd.appendChild(levelBadge);
 
   const eventTd = document.createElement("td");
@@ -613,13 +628,13 @@ function rowFor(entry) {
   const channelChip = document.createElement("span");
   channelChip.className = `channel-chip ${channelValue}`;
   channelChip.textContent = channelValue.toUpperCase();
-  channelChip.title = channelTooltip(channelValue);
+  applyTooltip(channelChip, channelTooltip(channelValue));
   channelWrap.appendChild(channelChip);
   const sourceChip = document.createElement("span");
   sourceChip.className = "source-chip";
   const sourceScope = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
   sourceChip.textContent = sourceScope;
-  sourceChip.title = sourceScopeTooltip(sourceScope);
+  applyTooltip(sourceChip, sourceScopeTooltip(sourceScope));
   channelWrap.appendChild(sourceChip);
   channelTd.appendChild(channelWrap);
 
@@ -768,7 +783,7 @@ function renderCards() {
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
         const message = entry.message || "";
-        li.innerHTML = `<span class="entry-level" title="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
+        li.innerHTML = `<span class="entry-level has-tooltip" tabindex="0" data-tooltip="${levelTooltip(level)}" title="${levelTooltip(level)}" aria-label="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
         list.appendChild(li);
       }
     }
