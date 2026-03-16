@@ -39,6 +39,22 @@ def _is_runtime_log_source(source: ServiceLogSource) -> bool:
     return "runtime" in tags or "binah" in tags
 
 
+def _is_legacy_runtime_log_source(source: ServiceLogSource) -> bool:
+    return "_dev_runtime_logs" in str(source.path)
+
+
+def _promote_legacy_runtime_source(source: ServiceLogSource) -> ServiceLogSource:
+    tags = [str(tag) for tag in source.tags if str(tag).strip().lower() not in {"dev", "yetzirah"}]
+    normalized = {tag.strip().lower() for tag in tags}
+    if "runtime" not in normalized:
+        tags.append("runtime")
+    if "binah" not in normalized:
+        tags.append("binah")
+    if "legacy-runtime" not in normalized:
+        tags.append("legacy-runtime")
+    return ServiceLogSource(path=source.path, channel=source.channel, tags=tags)
+
+
 class ServiceRegistry:
     """Loads and serves service definitions."""
 
@@ -146,8 +162,18 @@ class ServiceRegistry:
                 )
             if runtime_project:
                 runtime_sources = [source for source in sources if _is_runtime_log_source(source)]
-                if runtime_sources:
+                if runtime_sources and any(source.path.exists() for source in runtime_sources):
                     sources = runtime_sources
+                else:
+                    legacy_runtime_sources = [
+                        _promote_legacy_runtime_source(source)
+                        for source in sources
+                        if _is_legacy_runtime_log_source(source) and source.path.exists()
+                    ]
+                    if legacy_runtime_sources:
+                        sources = legacy_runtime_sources
+                    elif runtime_sources:
+                        sources = runtime_sources
             services[service_id] = ServiceDefinition(
                 service_id=service_id,
                 name=str(item.get("name", service_id)),

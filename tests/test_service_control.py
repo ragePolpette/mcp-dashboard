@@ -68,6 +68,9 @@ def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
         tmp_dir = Path(tmp)
         config_dir = tmp_dir / "Binah" / "mcp-dashboard" / "backend" / "config"
         config_dir.mkdir(parents=True)
+        runtime_log = tmp_dir / "Binah" / "tools" / "_runtime_logs" / "svc.out.log"
+        runtime_log.parent.mkdir(parents=True)
+        runtime_log.write_text("runtime-line\n", encoding="utf-8")
 
         services_path = config_dir / "services.json"
         _write_json(
@@ -109,6 +112,56 @@ def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
         assert "_runtime_logs" in str(service.control.stderr_log)
         assert len(service.log_sources) == 1
         assert "runtime" in service.log_sources[0].tags
+
+
+def test_registry_runtime_mode_falls_back_to_legacy_runtime_logs_when_needed():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        config_dir = tmp_dir / "Binah" / "mcp-dashboard" / "backend" / "config"
+        config_dir.mkdir(parents=True)
+        legacy_log = tmp_dir / "Binah" / "tools" / "_dev_runtime_logs" / "svc.out.log"
+        legacy_log.parent.mkdir(parents=True)
+        legacy_log.write_text("legacy-line\n", encoding="utf-8")
+
+        services_path = config_dir / "services.json"
+        _write_json(
+            services_path,
+            {
+                "services": [
+                    {
+                        "id": "svc-runtime-fallback",
+                        "name": "Service Runtime Fallback",
+                        "control": {
+                            "workdir": "../../../llm-db-dev-mcp",
+                            "start_command": ["node", "src/server.js"],
+                            "stdout_log": "../../../tools/_dev_runtime_logs/svc.out.log",
+                        },
+                        "log_sources": [
+                            {
+                                "path": "../../../tools/_runtime_logs/svc.out.log",
+                                "channel": "stdout",
+                                "tags": ["runtime", "binah"],
+                            },
+                            {
+                                "path": "../../../tools/_dev_runtime_logs/svc.out.log",
+                                "channel": "stdout",
+                                "tags": ["dev", "yetzirah"],
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+
+        registry = ServiceRegistry(services_path)
+        service = registry.get("svc-runtime-fallback")
+
+        assert service is not None
+        assert len(service.log_sources) == 1
+        assert "runtime" in service.log_sources[0].tags
+        assert "binah" in service.log_sources[0].tags
+        assert "legacy-runtime" in service.log_sources[0].tags
+        assert "dev" not in service.log_sources[0].tags
 
 
 def test_process_status_without_control_is_safe():
