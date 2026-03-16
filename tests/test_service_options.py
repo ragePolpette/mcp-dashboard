@@ -54,6 +54,7 @@ def _db_prod_service() -> ServiceDefinition:
                     kind="string",
                     env_var="DB_PROD_CONNECTION_STRING",
                     default="",
+                    required=True,
                     secret=True,
                 ),
                 ServiceOptionDefinition(
@@ -156,6 +157,20 @@ def test_secret_option_is_ephemeral_across_manager_restart():
         assert all(item["is_set"] is False for item in listed)
         assert "DB_PROD_CONNECTION_STRING" not in manager_restarted.options_env(service)
         assert "ANON_HASH_SALT" not in manager_restarted.options_env(service)
+
+
+def test_missing_required_options_reports_absent_secret():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "runtime" / "service_options.json"
+        manager = ServiceOptionsManager(state)
+        service = _db_prod_service()
+
+        missing_before = manager.missing_required_options(service)
+        assert missing_before == ["DB PROD Connection String"]
+
+        manager.update_options(service, {"db_prod_connection_string": "Server=.;Database=Prod;"})
+        missing_after = manager.missing_required_options(service)
+        assert missing_after == []
 
 
 def test_scrub_persisted_secrets_removes_existing_disk_values():

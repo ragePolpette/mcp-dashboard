@@ -174,7 +174,7 @@
         "options": [
           {
             "type": "string",
-            "required": false,
+            "required": true,
             "default": "",
             "description": "Connection string SQL Server per llm-db-dev-mcp.",
             "env_var": "DB_DEV_CONNECTION_STRING",
@@ -247,7 +247,7 @@
         "options": [
           {
             "type": "string",
-            "required": false,
+            "required": true,
             "default": "",
             "description": "Connection string SQL Server per llm-db-prod-mcp (produzione).",
             "env_var": "DB_PROD_CONNECTION_STRING",

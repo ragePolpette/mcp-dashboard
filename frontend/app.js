@@ -189,6 +189,43 @@ function sourceScopeLabel(source) {
   return "OTHER";
 }
 
+function levelTooltip(level) {
+  const normalized = String(level || "INFO").toUpperCase();
+  const labels = {
+    DEBUG: "Debug: dettagli tecnici utili per diagnosi",
+    INFO: "Info: evento operativo normale",
+    WARN: "Warning: anomalia non bloccante",
+    ERROR: "Error: errore applicativo o operativo",
+    CRITICAL: "Critical: errore critico"
+  };
+  return labels[normalized] || normalized;
+}
+
+function channelTooltip(channel) {
+  const normalized = String(channel || "stdout").toLowerCase();
+  if (normalized === "stdout") {
+    return "STDOUT: output standard del processo";
+  }
+  if (normalized === "stderr") {
+    return "STDERR: error output del processo";
+  }
+  return normalized.toUpperCase();
+}
+
+function sourceScopeTooltip(scope) {
+  const normalized = String(scope || "").toUpperCase();
+  if (normalized === "DEV") {
+    return "DEV: log letti dall'ambiente di sviluppo Yetzirah";
+  }
+  if (normalized === "RUNTIME") {
+    return "RUNTIME: log letti dall'ambiente di deploy Binah";
+  }
+  if (normalized === "SERVICE") {
+    return "SERVICE: log scritti direttamente dal servizio";
+  }
+  return normalized || "Origine log";
+}
+
 function sourceSummaryLabel(source) {
   const channel = String(source?.channel || "stdout").toUpperCase();
   const scope = sourceScopeLabel(source);
@@ -563,6 +600,7 @@ function rowFor(entry) {
   const levelBadge = document.createElement("span");
   levelBadge.className = `badge lvl-${level}`;
   levelBadge.textContent = level;
+  levelBadge.title = levelTooltip(level);
   levelTd.appendChild(levelBadge);
 
   const eventTd = document.createElement("td");
@@ -575,10 +613,13 @@ function rowFor(entry) {
   const channelChip = document.createElement("span");
   channelChip.className = `channel-chip ${channelValue}`;
   channelChip.textContent = channelValue.toUpperCase();
+  channelChip.title = channelTooltip(channelValue);
   channelWrap.appendChild(channelChip);
   const sourceChip = document.createElement("span");
   sourceChip.className = "source-chip";
-  sourceChip.textContent = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
+  const sourceScope = sourceScopeLabel({ tags, channel: channelValue, path: entry.source_path });
+  sourceChip.textContent = sourceScope;
+  sourceChip.title = sourceScopeTooltip(sourceScope);
   channelWrap.appendChild(sourceChip);
   channelTd.appendChild(channelWrap);
 
@@ -727,7 +768,7 @@ function renderCards() {
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
         const message = entry.message || "";
-        li.innerHTML = `<span class="entry-level">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
+        li.innerHTML = `<span class="entry-level" title="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
         list.appendChild(li);
       }
     }
@@ -837,6 +878,8 @@ function renderOptionsForm(serviceId) {
       input.type = opt.secret ? "password" : "text";
       input.value = opt.secret ? "" : (opt.value ?? "");
       if (opt.secret) {
+        input.autocomplete = "new-password";
+        input.spellcheck = false;
         input.placeholder = opt.is_set ? "******** (già impostata)" : "inserisci valore";
         hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore presente solo in memoria della dashboard corrente." : "Valore non impostato."} Non verra' salvato su disco.`.trim();
       } else {

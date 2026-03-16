@@ -243,6 +243,10 @@ def service_options_update(service_id: str, payload: OptionUpdatePayload) -> dic
 def service_start(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
+        missing_options = options_manager.missing_required_options(service)
+        if missing_options:
+            missing = ", ".join(missing_options)
+            raise ValueError(f"Missing required options: {missing}")
         env_overrides = options_manager.options_env(service)
         return process_manager.start(service, env_overrides=env_overrides)
     except ValueError as exc:
@@ -262,6 +266,10 @@ def service_stop(service_id: str) -> dict[str, Any]:
 def service_restart(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
+        missing_options = options_manager.missing_required_options(service)
+        if missing_options:
+            missing = ", ".join(missing_options)
+            raise ValueError(f"Missing required options: {missing}")
         env_overrides = options_manager.options_env(service)
         return process_manager.restart(service, env_overrides=env_overrides)
     except ValueError as exc:
