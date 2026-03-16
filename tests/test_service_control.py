@@ -181,6 +181,71 @@ def test_process_status_without_control_is_safe():
     assert status["last_error"] == "control_not_configured"
 
 
+def test_status_includes_health_payload(monkeypatch):
+    manager = ServiceProcessManager()
+    service = ServiceDefinition(
+        service_id="svc-health",
+        name="Service Health",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
+        parser_chain=[],
+        rule_sets=[],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-c", "print('ok')"],
+            host="127.0.0.1",
+            port=9999,
+            health_url="http://127.0.0.1:9999/health",
+        ),
+    )
+
+    monkeypatch.setattr(manager, "_read_pid", lambda _pid_file: None)
+    monkeypatch.setattr(manager, "_pid_from_port", lambda _port: 4321)
+    monkeypatch.setattr(manager, "_is_port_open", lambda _host, _port: True)
+    monkeypatch.setattr(
+        manager,
+        "_probe_health",
+        lambda _url: {
+            "ok": True,
+            "payload": {
+                "status": "ready",
+                "write_enabled": False,
+                "ingest_enabled": False,
+            },
+        },
+    )
+
+    status = manager.status(service)
+
+    assert status["running"] is True
+    assert status["health_ok"] is True
+    assert status["health_details"]["status"] == "ready"
+    assert status["health_details"]["write_enabled"] is False
+
+
+def test_probe_health_parses_json_payload(monkeypatch):
+    manager = ServiceProcessManager()
+
+    class FakeResponse:
+        status = 200
+
+        def read(self):
+            return b'{"status":"ready","write_enabled":false,"ingest_enabled":false}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr("app.process_manager.urllib.request.urlopen", lambda req, timeout=1.5: FakeResponse())
+
+    payload = manager._probe_health("http://127.0.0.1:8765/health")
+
+    assert payload["ok"] is True
+    assert payload["payload"]["status"] == "ready"
+    assert payload["payload"]["write_enabled"] is False
+
+
 def test_start_applies_env_overrides():
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)

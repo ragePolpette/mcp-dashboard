@@ -61,6 +61,7 @@ function getRuntimeStatus(serviceId) {
       host: null,
       port: null,
       health_ok: null,
+      health_details: null,
       last_error: "status_not_loaded"
     });
   }
@@ -173,6 +174,18 @@ function healthLabel(runtime) {
     return "n/d";
   }
   return runtime.health_ok ? "ok" : "ko";
+}
+
+function llmContextModeLabel(runtime) {
+  if (!runtime?.health_details || typeof runtime.health_details !== "object") {
+    return "";
+  }
+  const writeEnabled = runtime.health_details.write_enabled;
+  const ingestEnabled = runtime.health_details.ingest_enabled;
+  if (writeEnabled === undefined && ingestEnabled === undefined) {
+    return "";
+  }
+  return `Write ${writeEnabled ? "ON" : "OFF"} | Ingest ${ingestEnabled ? "ON" : "OFF"}`;
 }
 
 function sourceScopeLabel(source) {
@@ -740,7 +753,8 @@ function renderCards() {
       ? `Ultimo log: ${formatTimestamp(last.timestamp)} | ${(last.level || "INFO")} ${(last.event || "log.line")}`
       : "Ultimo log: n/d";
     const optsCount = service.control?.options_count || 0;
-    meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)} | ${lastEvent} | Opzioni: ${optsCount}`;
+    const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
+    meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | ${lastEvent} | Opzioni: ${optsCount}`;
 
     const metrics = getServiceMetrics(service.id);
     const kpi = document.createElement("div");
@@ -1122,7 +1136,8 @@ function renderAdvancedMeta(service) {
     : "control not configured";
   const streamState = advancedEventSource ? "active" : "stopped";
   const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
-  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
+  const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
+  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
 }
 
 async function openAdvanced(serviceId) {
