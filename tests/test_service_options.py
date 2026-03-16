@@ -54,6 +54,15 @@ def _db_prod_service() -> ServiceDefinition:
                     kind="string",
                     env_var="DB_PROD_CONNECTION_STRING",
                     default="",
+                    required=True,
+                    secret=True,
+                ),
+                ServiceOptionDefinition(
+                    option_id="anon_hash_salt",
+                    label="ANON HASH SALT",
+                    kind="string",
+                    env_var="ANON_HASH_SALT",
+                    default="",
                     secret=True,
                 )
             ],
@@ -99,22 +108,33 @@ def test_secret_option_not_exposed_and_applied_to_env():
         manager = ServiceOptionsManager(state)
         service = _db_prod_service()
 
-        manager.update_options(service, {"db_prod_connection_string": "Server=.;Database=Prod;"})
+        manager.update_options(
+            service,
+            {
+                "db_prod_connection_string": "Server=.;Database=Prod;",
+                "anon_hash_salt": "Orsa-Pietra-Faro-2026!",
+            },
+        )
         listed = manager.list_options(service)
-        assert listed[0]["secret"] is True
-        assert listed[0]["value"] is None
-        assert listed[0]["is_set"] is True
+        assert len(listed) == 2
+        assert all(item["secret"] is True for item in listed)
+        assert all(item["value"] is None for item in listed)
+        assert all(item["is_set"] is True for item in listed)
 
         env = manager.options_env(service)
         assert env["DB_PROD_CONNECTION_STRING"] == "Server=.;Database=Prod;"
+        assert env["ANON_HASH_SALT"] == "Orsa-Pietra-Faro-2026!"
         payload = state.read_text(encoding="utf-8")
         assert "db_prod_connection_string" not in payload
         assert "Server=.;Database=Prod;" not in payload
+        assert "anon_hash_salt" not in payload
+        assert "Orsa-Pietra-Faro-2026!" not in payload
 
         # empty secret update does not wipe value
-        manager.update_options(service, {"db_prod_connection_string": ""})
+        manager.update_options(service, {"db_prod_connection_string": "", "anon_hash_salt": ""})
         env_after = manager.options_env(service)
         assert env_after["DB_PROD_CONNECTION_STRING"] == "Server=.;Database=Prod;"
+        assert env_after["ANON_HASH_SALT"] == "Orsa-Pietra-Faro-2026!"
 
 
 def test_secret_option_is_ephemeral_across_manager_restart():
@@ -123,13 +143,34 @@ def test_secret_option_is_ephemeral_across_manager_restart():
         service = _db_prod_service()
 
         manager = ServiceOptionsManager(state)
-        manager.update_options(service, {"db_prod_connection_string": "Server=.;Database=Prod;"})
-        assert manager.list_options(service)[0]["is_set"] is True
+        manager.update_options(
+            service,
+            {
+                "db_prod_connection_string": "Server=.;Database=Prod;",
+                "anon_hash_salt": "Orsa-Pietra-Faro-2026!",
+            },
+        )
+        assert all(item["is_set"] is True for item in manager.list_options(service))
 
         manager_restarted = ServiceOptionsManager(state)
         listed = manager_restarted.list_options(service)
-        assert listed[0]["is_set"] is False
+        assert all(item["is_set"] is False for item in listed)
         assert "DB_PROD_CONNECTION_STRING" not in manager_restarted.options_env(service)
+        assert "ANON_HASH_SALT" not in manager_restarted.options_env(service)
+
+
+def test_missing_required_options_reports_absent_secret():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "runtime" / "service_options.json"
+        manager = ServiceOptionsManager(state)
+        service = _db_prod_service()
+
+        missing_before = manager.missing_required_options(service)
+        assert missing_before == ["DB PROD Connection String"]
+
+        manager.update_options(service, {"db_prod_connection_string": "Server=.;Database=Prod;"})
+        missing_after = manager.missing_required_options(service)
+        assert missing_after == []
 
 
 def test_scrub_persisted_secrets_removes_existing_disk_values():
@@ -137,7 +178,7 @@ def test_scrub_persisted_secrets_removes_existing_disk_values():
         state = Path(tmp) / "runtime" / "service_options.json"
         state.parent.mkdir(parents=True, exist_ok=True)
         state.write_text(
-            '{"services":{"llm-db-prod-mcp":{"db_prod_connection_string":"Server=.;Database=Prod;"}}}',
+            '{"services":{"llm-db-prod-mcp":{"db_prod_connection_string":"Server=.;Database=Prod;","anon_hash_salt":"Orsa-Pietra-Faro-2026!"}}}',
             encoding="utf-8",
         )
 
@@ -150,3 +191,5 @@ def test_scrub_persisted_secrets_removes_existing_disk_values():
         payload = state.read_text(encoding="utf-8")
         assert "db_prod_connection_string" not in payload
         assert "Server=.;Database=Prod;" not in payload
+        assert "anon_hash_salt" not in payload
+        assert "Orsa-Pietra-Faro-2026!" not in payload
