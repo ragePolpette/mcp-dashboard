@@ -26,7 +26,18 @@
         "pid_file": "../../runtime/pids/llm-context.pid",
         "stdout_log": "../../../tools/_dev_runtime_logs/llm-context.out.log",
         "stderr_log": "../../../tools/_dev_runtime_logs/llm-context.err.log",
-        "options": []
+        "options": [
+          {
+            "id": "llm_context_write_enabled",
+            "label": "Enable Context Write / Ingest",
+            "secret": false,
+            "type": "boolean",
+            "env_var": "LLM_CONTEXT_WRITE_ENABLED",
+            "description": "Abilita il write-plane di llm-context all'avvio. Default OFF; quando ON abilita anche ingest se non esiste un override piu specifico.",
+            "required": false,
+            "default": false
+          }
+        ]
       },
       "log_sources": [
         {

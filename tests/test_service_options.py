@@ -39,6 +39,27 @@ def _memory_service() -> ServiceDefinition:
     )
 
 
+def _context_service() -> ServiceDefinition:
+    return ServiceDefinition(
+        service_id="llm-context",
+        name="LLM Context",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-u", "mcp_server_http.py"],
+            options=[
+                ServiceOptionDefinition(
+                    option_id="llm_context_write_enabled",
+                    label="Enable Context Write / Ingest",
+                    kind="boolean",
+                    env_var="LLM_CONTEXT_WRITE_ENABLED",
+                    default=False,
+                )
+            ],
+        ),
+    )
+
+
 def _db_prod_service() -> ServiceDefinition:
     return ServiceDefinition(
         service_id="llm-db-prod-mcp",
@@ -85,6 +106,18 @@ def test_options_update_and_env_mapping():
 
         env = manager.options_env(service)
         assert env["MEMORY_IMPORTANCE_STRICT"] == "true"
+
+
+def test_context_write_toggle_maps_to_env():
+    with tempfile.TemporaryDirectory() as tmp:
+        state = Path(tmp) / "runtime" / "service_options.json"
+        manager = ServiceOptionsManager(state)
+        service = _context_service()
+
+        manager.update_options(service, {"llm_context_write_enabled": True})
+
+        env = manager.options_env(service)
+        assert env["LLM_CONTEXT_WRITE_ENABLED"] == "true"
 
 
 def test_options_invalid_boolean_rejected():

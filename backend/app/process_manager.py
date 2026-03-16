@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import socket
@@ -25,6 +26,7 @@ class ServiceStatus:
     host: str | None
     port: int | None
     health_ok: bool | None
+    health_details: dict | None = None
     last_error: str | None = None
 
 
@@ -65,7 +67,7 @@ class ServiceProcessManager:
 
         running = bool(pid_running or port_running or pid_from_port)
         pid = pid_from_port or pid_from_file
-        health_ok = self._probe_health(control.health_url)
+        health_state = self._probe_health(control.health_url)
 
         if control.pid_file and pid_from_file and not pid_running and not pid_from_port:
             try:
@@ -81,7 +83,8 @@ class ServiceProcessManager:
                 pid=pid,
                 host=control.host,
                 port=control.port,
-                health_ok=health_ok,
+                health_ok=health_state["ok"],
+                health_details=health_state["payload"],
                 last_error=None,
             )
         )
@@ -364,12 +367,22 @@ class ServiceProcessManager:
                 return int(line)
         return None
 
-    def _probe_health(self, url: str | None) -> bool | None:
+    def _probe_health(self, url: str | None) -> dict[str, object | None]:
         if not url:
-            return None
+            return {"ok": None, "payload": None}
         req = urllib.request.Request(url, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=1.5) as response:
-                return 200 <= response.status < 400
+                raw = response.read()
+                payload = None
+                if raw:
+                    try:
+                        payload = json.loads(raw.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        payload = None
+                return {
+                    "ok": 200 <= response.status < 400,
+                    "payload": payload if isinstance(payload, dict) else None,
+                }
         except (urllib.error.URLError, TimeoutError, ValueError):
-            return False
+            return {"ok": False, "payload": None}
