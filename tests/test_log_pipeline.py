@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from datetime import datetime
 from pathlib import Path
 import sys
 
@@ -81,3 +82,30 @@ def test_pipeline_keeps_dynamic_fields_for_ui_rendering():
         )
         assert entry.fields["custom_field"] == "abc"
         assert entry.fields["custom_num"] == 7
+
+
+def test_pipeline_keeps_fallback_timestamp_for_plain_text_logs():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        rules_path = tmp_dir / "rules.json"
+        _write_json(rules_path, {"rule_sets": {"default": []}})
+
+        engine = LogRuleEngine(rules_path)
+        pipeline = LogPipeline(engine)
+        service = ServiceDefinition(
+            service_id="llm-db-dev-mcp",
+            name="LLM DB DEV MCP",
+            log_sources=[ServiceLogSource(path=tmp_dir / "dummy.log", channel="stdout")],
+            parser_chain=["json", "python", "uvicorn_access", "node_deprecation"],
+            rule_sets=[],
+        )
+        fallback_timestamp = datetime.now().astimezone().isoformat()
+        entry = pipeline.parse_line(
+            service=service,
+            source=service.log_sources[0],
+            line="llm-db-dev-mcp listening at http://127.0.0.1:8781/mcp",
+            fallback_timestamp=fallback_timestamp,
+        )
+
+        assert entry.event == "log.line"
+        assert entry.timestamp == fallback_timestamp

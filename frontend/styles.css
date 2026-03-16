@@ -229,6 +229,52 @@ button:disabled {
   margin-right: 6px;
 }
 
+.has-tooltip {
+  position: relative;
+}
+
+.has-tooltip[data-tooltip] {
+  cursor: help;
+}
+
+.has-tooltip[data-tooltip]:hover::after,
+.has-tooltip[data-tooltip]:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: 50;
+  min-width: 180px;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #3a5e86;
+  background: rgba(10, 18, 28, 0.96);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.has-tooltip[data-tooltip]:hover::before,
+.has-tooltip[data-tooltip]:focus-visible::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 2px);
+  transform: translateX(-50%);
+  z-index: 49;
+  border-width: 6px;
+  border-style: solid;
+  border-color: #3a5e86 transparent transparent transparent;
+  pointer-events: none;
+}
+
 .widget-actions {
   margin-top: auto;
   display: flex;

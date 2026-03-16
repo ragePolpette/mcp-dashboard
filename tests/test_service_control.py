@@ -63,6 +63,54 @@ def test_registry_parses_control_block():
         assert service.control.workdir.name == "svc-a"
 
 
+def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        config_dir = tmp_dir / "Binah" / "mcp-dashboard" / "backend" / "config"
+        config_dir.mkdir(parents=True)
+
+        services_path = config_dir / "services.json"
+        _write_json(
+            services_path,
+            {
+                "services": [
+                    {
+                        "id": "svc-runtime",
+                        "name": "Service Runtime",
+                        "control": {
+                            "workdir": "../../../llm-db-dev-mcp",
+                            "start_command": ["node", "src/server.js"],
+                            "stdout_log": "../../../tools/_dev_runtime_logs/svc.out.log",
+                            "stderr_log": "../../../tools/_dev_runtime_logs/svc.err.log",
+                        },
+                        "log_sources": [
+                            {
+                                "path": "../../../tools/_runtime_logs/svc.out.log",
+                                "channel": "stdout",
+                                "tags": ["runtime", "binah"],
+                            },
+                            {
+                                "path": "../../../tools/_dev_runtime_logs/svc.out.log",
+                                "channel": "stdout",
+                                "tags": ["dev", "yetzirah"],
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+
+        registry = ServiceRegistry(services_path)
+        service = registry.get("svc-runtime")
+
+        assert service is not None
+        assert service.control is not None
+        assert "_runtime_logs" in str(service.control.stdout_log)
+        assert "_runtime_logs" in str(service.control.stderr_log)
+        assert len(service.log_sources) == 1
+        assert "runtime" in service.log_sources[0].tags
+
+
 def test_process_status_without_control_is_safe():
     manager = ServiceProcessManager()
     service = ServiceDefinition(
