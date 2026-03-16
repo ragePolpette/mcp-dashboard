@@ -20,6 +20,25 @@ def _resolve_path(base_dir: Path, raw_path: str) -> Path:
     return (base_dir / path).resolve()
 
 
+def _project_root(base_dir: Path) -> Path:
+    return base_dir.resolve().parents[2]
+
+
+def _is_runtime_project(base_dir: Path) -> bool:
+    return _project_root(base_dir).name.lower() == "binah"
+
+
+def _runtime_log_path(path: Path) -> Path:
+    return Path(str(path).replace("_dev_runtime_logs", "_runtime_logs"))
+
+
+def _is_runtime_log_source(source: ServiceLogSource) -> bool:
+    tags = {str(tag).strip().lower() for tag in source.tags}
+    if "service-log" in tags:
+        return True
+    return "runtime" in tags or "binah" in tags
+
+
 class ServiceRegistry:
     """Loads and serves service definitions."""
 
@@ -75,11 +94,16 @@ class ServiceRegistry:
         except (TypeError, ValueError):
             startup_timeout_sec = 12
 
+        runtime_project = _is_runtime_project(base_dir)
+
         def resolve_opt_path(key: str) -> Path | None:
             raw = str(control.get(key, "")).strip()
             if not raw:
                 return None
-            return _resolve_path(base_dir, raw)
+            resolved = _resolve_path(base_dir, raw)
+            if runtime_project:
+                return _runtime_log_path(resolved)
+            return resolved
 
         env_payload = control.get("env") or {}
         env = {str(k): str(v) for k, v in env_payload.items()} if isinstance(env_payload, dict) else {}
@@ -100,6 +124,7 @@ class ServiceRegistry:
 
     def reload(self) -> None:
         base_dir = self.config_path.parent
+        runtime_project = _is_runtime_project(base_dir)
         payload = json.loads(self.config_path.read_text(encoding="utf-8"))
         services: dict[str, ServiceDefinition] = {}
 
@@ -119,6 +144,10 @@ class ServiceRegistry:
                         tags=[str(tag) for tag in (src.get("tags") or [])],
                     )
                 )
+            if runtime_project:
+                runtime_sources = [source for source in sources if _is_runtime_log_source(source)]
+                if runtime_sources:
+                    sources = runtime_sources
             services[service_id] = ServiceDefinition(
                 service_id=service_id,
                 name=str(item.get("name", service_id)),
