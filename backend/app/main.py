@@ -91,6 +91,118 @@ def _apply_log_filters(
     return out
 
 
+def _entries_newest_first(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    ranked: list[tuple[float, int, dict[str, Any]]] = []
+    fallback_tz = datetime.now().astimezone().tzinfo
+    for idx, entry in enumerate(entries):
+        parsed = _parse_entry_timestamp(entry.get("timestamp"))
+        if parsed is not None and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=fallback_tz)
+        score = parsed.timestamp() if parsed is not None else float("-inf")
+        ranked.append((score, idx, entry))
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [entry for _, _, entry in ranked]
+
+
+def _query_preview(sql_text: str, max_chars: int = 320) -> tuple[str, bool]:
+    text = str(sql_text or "").strip()
+    if len(text) <= max_chars:
+        return text, False
+    return f"{text[: max_chars - 1]}…", True
+
+
+def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pending_by_tool: dict[str, list[dict[str, Any]]] = {}
+    queries: list[dict[str, Any]] = []
+
+    for entry in entries:
+        event = str(entry.get("event") or "")
+        fields = entry.get("fields") or {}
+
+        if event == "db.query.executed":
+            queries.append(
+                {
+                    "timestamp": entry.get("timestamp"),
+                    "level": entry.get("level"),
+                    "tool": fields.get("tool"),
+                    "mode": fields.get("mode"),
+                    "row_count": fields.get("row_count"),
+                    "result_truncated": fields.get("result_truncated"),
+                    "query_preview": fields.get("query_preview"),
+                    "query_full": fields.get("query_full"),
+                    "query_full_truncated": fields.get("query_full_truncated"),
+                    "parameter_keys": fields.get("parameter_keys"),
+                    "source_path": entry.get("source_path"),
+                }
+            )
+            continue
+
+        if event == "query_in":
+            tool = str(fields.get("tool") or "unknown")
+            sql_text = str(fields.get("sql") or "")
+            preview, preview_truncated = _query_preview(sql_text)
+            parameters = fields.get("parameters") or {}
+            pending_by_tool.setdefault(tool, []).append(
+                {
+                    "tool": tool,
+                    "query_preview": preview,
+                    "query_full": sql_text,
+                    "query_full_truncated": preview_truncated,
+                    "parameter_keys": sorted(parameters.keys()) if isinstance(parameters, dict) else [],
+                }
+            )
+            continue
+
+        if event != "query_out":
+            continue
+
+        response = fields.get("response") or {}
+        tool = str(fields.get("tool") or response.get("tool") or "unknown")
+        pending_items = pending_by_tool.get(tool) or []
+        pending = pending_items.pop(0) if pending_items else {}
+        queries.append(
+            {
+                "timestamp": entry.get("timestamp"),
+                "level": entry.get("level"),
+                "tool": tool,
+                "mode": response.get("mode"),
+                "row_count": response.get("rowCount"),
+                "result_truncated": response.get("truncated"),
+                "query_preview": pending.get("query_preview"),
+                "query_full": pending.get("query_full"),
+                "query_full_truncated": pending.get("query_full_truncated"),
+                "parameter_keys": pending.get("parameter_keys"),
+                "source_path": entry.get("source_path"),
+            }
+        )
+
+    return _entries_newest_first(queries)
+
+
+def _clear_service_logs(service) -> list[str]:
+    seen: set[str] = set()
+    cleared: list[str] = []
+
+    candidates = [src.path for src in service.log_sources]
+    if service.control is not None:
+        if service.control.stdout_log is not None:
+            candidates.append(service.control.stdout_log)
+        if service.control.stderr_log is not None:
+            candidates.append(service.control.stderr_log)
+
+    for path in candidates:
+        resolved = str(path)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("", encoding="utf-8")
+        cleared.append(resolved)
+
+    return cleared
+
+
 def _compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     now = datetime.now().astimezone()
     one_minute_ago = now - timedelta(minutes=1)
@@ -139,8 +251,10 @@ def _compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
                 elif event == "context.retrieved":
                     context_retrieved_today += 1
 
-        if event == "db.query.executed":
+        if event in {"db.query.executed", "query_out"}:
             row_count_raw = fields.get("row_count")
+            if row_count_raw is None and isinstance(fields.get("response"), dict):
+                row_count_raw = fields["response"].get("rowCount")
             try:
                 row_count_value = float(row_count_raw)
                 db_row_counts.append(row_count_value)
@@ -287,7 +401,15 @@ def get_logs(
     service = _service_or_404(service_id)
     entries = pipeline.read_tail(service, tail=tail)
     entries = _apply_log_filters(entries, level=level, event=event, text=text)
+    entries = _entries_newest_first(entries)
     return {"service_id": service_id, "count": len(entries), "entries": entries}
+
+
+@app.post("/api/services/{service_id}/logs/clear")
+def clear_logs(service_id: str) -> dict[str, Any]:
+    service = _service_or_404(service_id)
+    cleared = _clear_service_logs(service)
+    return {"ok": True, "service_id": service_id, "cleared": cleared, "count": len(cleared)}
 
 
 @app.get("/api/services/{service_id}/queries")
@@ -298,32 +420,10 @@ def get_queries(
 ) -> dict[str, Any]:
     service = _service_or_404(service_id)
     entries = pipeline.read_tail(service, tail=tail)
-    query_entries = [
-        entry for entry in entries
-        if str(entry.get("event") or "") == "db.query.executed"
-    ]
+    query_entries = _build_query_records(entries)
     if text:
         query_entries = _apply_log_filters(query_entries, text=text)
-
-    queries: list[dict[str, Any]] = []
-    for entry in query_entries:
-        fields = entry.get("fields") or {}
-        queries.append(
-            {
-                "timestamp": entry.get("timestamp"),
-                "level": entry.get("level"),
-                "tool": fields.get("tool"),
-                "mode": fields.get("mode"),
-                "row_count": fields.get("row_count"),
-                "result_truncated": fields.get("result_truncated"),
-                "query_preview": fields.get("query_preview"),
-                "query_full": fields.get("query_full"),
-                "query_full_truncated": fields.get("query_full_truncated"),
-                "parameter_keys": fields.get("parameter_keys"),
-                "source_path": entry.get("source_path"),
-            }
-        )
-    return {"service_id": service_id, "count": len(queries), "queries": queries}
+    return {"service_id": service_id, "count": len(query_entries), "queries": query_entries}
 
 
 @app.get("/api/services/{service_id}/metrics")
