@@ -475,8 +475,9 @@ function truncateText(text, maxLength = 180) {
   return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
-function runtimePortLabel(runtime) {
-  return runtime.port ? `PORT ${runtime.port}` : "PORT n/d";
+function compactPreviewText(text, maxLength = 120) {
+  const singleLine = String(text || "").replace(/\s+/g, " ").trim();
+  return truncateText(singleLine, maxLength);
 }
 
 function isDbQueryEvent(entry) {
@@ -833,7 +834,6 @@ function renderCards() {
       <div class="widget-title">${service.name}</div>
       <div class="status">
         <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
-        <span class="endpoint-chip">${runtimePortLabel(runtime)}</span>
         <span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>
       </div>
     `;
@@ -889,8 +889,8 @@ function renderCards() {
         const li = document.createElement("li");
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
-        const message = truncateText(entryDisplayMessage(entry), 160);
-        li.innerHTML = `<span class="entry-level has-tooltip" tabindex="0" data-tooltip="${levelTooltip(level)}" title="${levelTooltip(level)}" aria-label="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
+        const message = compactPreviewText(entryDisplayMessage(entry), 150);
+        li.innerHTML = `<span class="entry-level has-tooltip" tabindex="0" data-tooltip="${levelTooltip(level)}" title="${levelTooltip(level)}" aria-label="${levelTooltip(level)}">${level}</span><span class="widget-entry-text">${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}</span>`;
         list.appendChild(li);
       }
     }
@@ -1250,7 +1250,7 @@ function renderAdvancedMeta(service) {
   const streamState = advancedEventSource ? "active" : "stopped";
   const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
   const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
-  advancedMeta.textContent = `Status: ${runtimeText} | ${runtimePortLabel(runtime)} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
+  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
 }
 
 async function openAdvanced(serviceId) {
