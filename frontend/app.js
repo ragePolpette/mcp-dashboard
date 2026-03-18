@@ -12,6 +12,7 @@ const filterSource = document.getElementById("filterSource");
 const filterText = document.getElementById("filterText");
 const applyFilterBtn = document.getElementById("applyFilterBtn");
 const clearFilterBtn = document.getElementById("clearFilterBtn");
+const clearLogsBtn = document.getElementById("clearLogsBtn");
 const loadBtn = document.getElementById("loadBtn");
 const streamBtn = document.getElementById("streamBtn");
 const stopBtn = document.getElementById("stopBtn");
@@ -466,13 +467,104 @@ function queryMatchesAdvancedFilters(query) {
   return true;
 }
 
+function truncateText(text, maxLength = 180) {
+  const normalized = String(text || "");
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function isDbQueryEvent(entry) {
+  const eventName = String(entry?.event || "");
+  return eventName === "db.query.executed" || eventName === "query_in" || eventName === "query_out";
+}
+
+function entryDisplayMessage(entry) {
+  const eventName = String(entry?.event || "");
+  const fields = entry?.fields || {};
+
+  if (eventName === "query_in") {
+    return `${fields.tool || "db"} | query ricevuta`;
+  }
+
+  if (eventName === "query_out") {
+    const response = fields.response || {};
+    const tool = fields.tool || response.tool || "db";
+    const rowCount = response.rowCount ?? "n/d";
+    const suffix = response.truncated ? " | risultato troncato" : "";
+    return `${tool} | ${rowCount} rows${suffix}`;
+  }
+
+  if (eventName === "db.query.executed") {
+    const tool = fields.tool || "db";
+    const rowCount = fields.row_count ?? "n/d";
+    const suffix = fields.result_truncated ? " | risultato troncato" : "";
+    return `${tool} | ${rowCount} rows${suffix}`;
+  }
+
+  return entry?.message || "";
+}
+
+function entryMetaPayload(entry) {
+  const fields = entry?.fields || {};
+  const tags = entry?.tags || [];
+  const eventName = String(entry?.event || "");
+  const base = {
+    timestamp: entry?.timestamp || null,
+    logger: entry?.logger || null,
+    channel: entry?.channel || null,
+    source_path: entry?.source_path || null,
+    tags
+  };
+
+  if (eventName === "query_in") {
+    const parameters = fields.parameters;
+    return {
+      ...base,
+      tool: fields.tool || null,
+      parameter_keys: parameters && typeof parameters === "object" ? Object.keys(parameters).sort() : []
+    };
+  }
+
+  if (eventName === "query_out") {
+    const response = fields.response || {};
+    return {
+      ...base,
+      tool: fields.tool || response.tool || null,
+      mode: response.mode || null,
+      row_count: response.rowCount ?? null,
+      result_truncated: response.truncated ?? null
+    };
+  }
+
+  if (eventName === "db.query.executed") {
+    return {
+      ...base,
+      tool: fields.tool || null,
+      mode: fields.mode || null,
+      row_count: fields.row_count ?? null,
+      result_truncated: fields.result_truncated ?? null,
+      parameter_keys: fields.parameter_keys ?? []
+    };
+  }
+
+  const compactFields = Object.fromEntries(
+    Object.entries(fields).filter(([key]) => !key.endsWith("_full"))
+  );
+  return {
+    ...base,
+    ...compactFields
+  };
+}
+
 function renderQueriesForAdvanced(serviceId) {
   const allQueries = queriesByService.get(serviceId) || [];
   const rows = allQueries.filter(query => queryMatchesAdvancedFilters(query));
   clearQueryRows();
 
   const frag = document.createDocumentFragment();
-  for (const query of rows.slice(-200).reverse()) {
+  for (const query of rows.slice(0, 200)) {
     const tr = document.createElement("tr");
 
     const timeTd = document.createElement("td");
@@ -656,23 +748,15 @@ function rowFor(entry) {
   msgWrap.className = "message-cell";
   const msgText = document.createElement("div");
   msgText.className = "message-main";
-  msgText.textContent = entry.message || "";
+  msgText.textContent = entryDisplayMessage(entry);
   msgWrap.appendChild(msgText);
-  appendPreviewBlocks(msgWrap, fields);
+  if (!isDbQueryEvent(entry)) {
+    appendPreviewBlocks(msgWrap, fields);
+  }
   msgTd.appendChild(msgWrap);
 
   const metaTd = document.createElement("td");
-  const compactFields = Object.fromEntries(
-    Object.entries(fields).filter(([key]) => !key.endsWith("_full"))
-  );
-  const meta = {
-    timestamp: entry.timestamp || null,
-    logger: entry.logger || null,
-    channel: entry.channel || null,
-    source_path: entry.source_path || null,
-    tags,
-    ...compactFields
-  };
+  const meta = entryMetaPayload(entry);
   const clean = Object.fromEntries(
     Object.entries(meta).filter(([, v]) => v !== null && v !== "" && !(Array.isArray(v) && v.length === 0))
   );
@@ -696,10 +780,14 @@ function clearAdvancedLogs() {
   }
 }
 
-function appendAdvancedEntries(entries) {
+function appendAdvancedEntries(entries, { prepend = false } = {}) {
   const frag = document.createDocumentFragment();
   for (const entry of entries) {
     frag.appendChild(rowFor(entry));
+  }
+  if (prepend) {
+    logBody.prepend(frag);
+    return;
   }
   logBody.appendChild(frag);
 }
@@ -728,7 +816,7 @@ function renderCards() {
     const state = getServiceState(service.id);
     const runtime = getRuntimeStatus(service.id);
     const entries = state.entries || [];
-    const last = entries.length > 0 ? entries[entries.length - 1] : null;
+    const last = entries.length > 0 ? entries[0] : null;
 
     const card = document.createElement("article");
     card.className = "widget-card";
@@ -791,12 +879,12 @@ function renderCards() {
       li.textContent = "Nessun log disponibile.";
       list.appendChild(li);
     } else {
-      const preview = entries.slice(-3).reverse();
+      const preview = entries.slice(0, 3);
       for (const entry of preview) {
         const li = document.createElement("li");
         const level = entry.level || "INFO";
         const eventName = entry.event || "log.line";
-        const message = entry.message || "";
+        const message = truncateText(entryDisplayMessage(entry), 160);
         li.innerHTML = `<span class="entry-level has-tooltip" tabindex="0" data-tooltip="${levelTooltip(level)}" title="${levelTooltip(level)}" aria-label="${levelTooltip(level)}">${level}</span>${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}`;
         list.appendChild(li);
       }
@@ -835,6 +923,11 @@ function renderCards() {
     restartBtn.disabled = state.actionBusy || !runtime.control_available || !runtime.running;
     restartBtn.addEventListener("click", () => controlAction(service.id, "restart"));
 
+    const clearBtn = document.createElement("button");
+    clearBtn.textContent = "Pulisci Log";
+    clearBtn.disabled = state.actionBusy;
+    clearBtn.addEventListener("click", () => clearServiceLogs(service.id));
+
     const advancedBtn = document.createElement("button");
     advancedBtn.textContent = "Avanzate";
     advancedBtn.addEventListener("click", () => openAdvanced(service.id));
@@ -843,6 +936,7 @@ function renderCards() {
     controls.appendChild(startBtn);
     controls.appendChild(stopActionBtn);
     controls.appendChild(restartBtn);
+    controls.appendChild(clearBtn);
     controls.appendChild(advancedBtn);
 
     card.appendChild(head);
@@ -1114,6 +1208,20 @@ async function controlAction(serviceId, action) {
   }
 }
 
+async function clearServiceLogs(serviceId) {
+  await apiJson(`/api/services/${serviceId}/logs/clear`, { method: "POST" });
+  const state = getServiceState(serviceId);
+  state.entries = [];
+  queriesByService.set(serviceId, []);
+  renderCards();
+
+  if (advancedServiceId === serviceId) {
+    clearAdvancedLogs();
+    clearQueryRows();
+    await reloadAdvanced();
+  }
+}
+
 function stopAdvancedStream() {
   if (advancedEventSource) {
     advancedEventSource.close();
@@ -1245,15 +1353,15 @@ function startAdvancedStream() {
     try {
       const entry = JSON.parse(evt.data);
       const state = getServiceState(advancedServiceId);
-      state.entries.push(entry);
+      state.entries.unshift(entry);
       if (state.entries.length > 500) {
-        state.entries = state.entries.slice(-500);
+        state.entries = state.entries.slice(0, 500);
       }
       rebuildEventFilterOptions(state.entries || []);
       if (entryMatchesAdvancedFilters(entry)) {
-        appendAdvancedEntries([entry]);
+        appendAdvancedEntries([entry], { prepend: true });
       }
-      if (isDbService(advancedServiceId) && String(entry?.event || "") === "db.query.executed") {
+      if (isDbService(advancedServiceId) && isDbQueryEvent(entry)) {
         loadServiceQueries(advancedServiceId, 2000).then(() => renderQueriesForAdvanced(advancedServiceId));
       }
       Promise.all([
@@ -1311,6 +1419,12 @@ clearFilterBtn.addEventListener("click", async () => {
     await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderQueriesForAdvanced(advancedServiceId);
   }
+});
+clearLogsBtn.addEventListener("click", async () => {
+  if (!advancedServiceId) {
+    return;
+  }
+  await clearServiceLogs(advancedServiceId);
 });
 refreshAllBtn.addEventListener("click", () => refreshAll(30));
 reloadAlertsBtn.addEventListener("click", async () => {
