@@ -150,6 +150,19 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.endpoint-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #d7e5f3;
+  border: 1px solid #385a7f;
+  background: rgba(18, 35, 53, 0.55);
+}
+
 .widget-kpi {
   border: 1px solid #284a6f;
   border-radius: 9px;
@@ -222,11 +235,24 @@ button:disabled {
   background: rgba(8, 17, 28, 0.28);
   padding: 7px 8px;
   font-size: 0.82rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
 }
 
 .widget-list .entry-level {
   font-weight: 700;
-  margin-right: 6px;
+  flex: 0 0 auto;
+}
+
+.widget-entry-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  min-width: 0;
+  line-height: 1.4;
+  word-break: break-word;
 }
 
 .has-tooltip {
@@ -441,6 +467,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 thead th {
@@ -474,11 +501,57 @@ tbody td {
 .lvl-DEBUG { background: #334f54; color: #b6d7db; }
 
 .meta-json {
-  max-width: 460px;
+  max-width: none;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   color: #d3dfea;
   font-size: 0.8rem;
+}
+
+.log-pane th:nth-child(1),
+.log-pane td:nth-child(1) {
+  width: 92px;
+}
+
+.log-pane th:nth-child(2),
+.log-pane td:nth-child(2) {
+  width: 76px;
+}
+
+.log-pane th:nth-child(3),
+.log-pane td:nth-child(3) {
+  width: 112px;
+}
+
+.log-pane th:nth-child(4),
+.log-pane td:nth-child(4) {
+  width: 112px;
+}
+
+.log-pane th:nth-child(5),
+.log-pane td:nth-child(5) {
+  width: 34%;
+}
+
+.log-pane th:nth-child(6),
+.log-pane td:nth-child(6) {
+  width: 34%;
+}
+
+.query-pane th:nth-child(1),
+.query-pane td:nth-child(1) {
+  width: 92px;
+}
+
+.query-pane th:nth-child(2),
+.query-pane td:nth-child(2) {
+  width: 170px;
+}
+
+.query-pane th:nth-child(3),
+.query-pane td:nth-child(3) {
+  width: 72px;
 }
 
 .channel-cell {
@@ -522,11 +595,13 @@ tbody td {
 .message-cell {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .message-main {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .message-block {
@@ -548,6 +623,7 @@ tbody td {
 .message-full {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 0.8rem;
   color: #d3dfea;
