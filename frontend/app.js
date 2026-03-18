@@ -475,6 +475,10 @@ function truncateText(text, maxLength = 180) {
   return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
 }
 
+function runtimePortLabel(runtime) {
+  return runtime.port ? `PORT ${runtime.port}` : "PORT n/d";
+}
+
 function isDbQueryEvent(entry) {
   const eventName = String(entry?.event || "");
   return eventName === "db.query.executed" || eventName === "query_in" || eventName === "query_out";
@@ -829,6 +833,7 @@ function renderCards() {
       <div class="widget-title">${service.name}</div>
       <div class="status">
         <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
+        <span class="endpoint-chip">${runtimePortLabel(runtime)}</span>
         <span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>
       </div>
     `;
@@ -1245,7 +1250,7 @@ function renderAdvancedMeta(service) {
   const streamState = advancedEventSource ? "active" : "stopped";
   const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
   const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
-  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
+  advancedMeta.textContent = `Status: ${runtimeText} | ${runtimePortLabel(runtime)} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
 }
 
 async function openAdvanced(serviceId) {

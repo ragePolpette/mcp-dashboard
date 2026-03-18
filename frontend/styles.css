@@ -150,6 +150,19 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.endpoint-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #d7e5f3;
+  border: 1px solid #385a7f;
+  background: rgba(18, 35, 53, 0.55);
+}
+
 .widget-kpi {
   border: 1px solid #284a6f;
   border-radius: 9px;
