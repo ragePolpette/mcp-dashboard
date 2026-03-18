@@ -441,6 +441,7 @@ button:disabled {
 table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 
 thead th {
@@ -474,11 +475,57 @@ tbody td {
 .lvl-DEBUG { background: #334f54; color: #b6d7db; }
 
 .meta-json {
-  max-width: 460px;
+  max-width: none;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   color: #d3dfea;
   font-size: 0.8rem;
+}
+
+.log-pane th:nth-child(1),
+.log-pane td:nth-child(1) {
+  width: 92px;
+}
+
+.log-pane th:nth-child(2),
+.log-pane td:nth-child(2) {
+  width: 76px;
+}
+
+.log-pane th:nth-child(3),
+.log-pane td:nth-child(3) {
+  width: 112px;
+}
+
+.log-pane th:nth-child(4),
+.log-pane td:nth-child(4) {
+  width: 112px;
+}
+
+.log-pane th:nth-child(5),
+.log-pane td:nth-child(5) {
+  width: 42%;
+}
+
+.log-pane th:nth-child(6),
+.log-pane td:nth-child(6) {
+  width: 26%;
+}
+
+.query-pane th:nth-child(1),
+.query-pane td:nth-child(1) {
+  width: 92px;
+}
+
+.query-pane th:nth-child(2),
+.query-pane td:nth-child(2) {
+  width: 170px;
+}
+
+.query-pane th:nth-child(3),
+.query-pane td:nth-child(3) {
+  width: 72px;
 }
 
 .channel-cell {
@@ -522,11 +569,13 @@ tbody td {
 .message-cell {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .message-main {
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .message-block {
@@ -548,6 +597,7 @@ tbody td {
 .message-full {
   margin: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   font-size: 0.8rem;
   color: #d3dfea;
