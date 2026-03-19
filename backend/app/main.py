@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,14 @@ process_manager = ServiceProcessManager()
 options_manager = ServiceOptionsManager(OPTIONS_STATE)
 options_manager.scrub_persisted_secrets(registry.list_services())
 
-app = FastAPI(title="MCP Dashboard", version="0.3.0")
+
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI):
+    pipeline.prune_old_logs(registry.list_services())
+    yield
+
+
+app = FastAPI(title="MCP Dashboard", version="0.3.0", lifespan=_app_lifespan)
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
 
 

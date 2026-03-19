@@ -13,6 +13,8 @@ from .log_parsers import parse_with_chain
 from .log_rules import LogRuleEngine
 from .models import ParsedLogEntry, ServiceDefinition, ServiceLogSource
 
+DEFAULT_LOG_RETENTION_DAYS = 15
+
 
 def _tail_lines(path: Path, tail: int) -> list[str]:
     if tail <= 0:
@@ -31,6 +33,83 @@ class LogPipeline:
 
     def __init__(self, rule_engine: LogRuleEngine):
         self.rule_engine = rule_engine
+
+    def prune_old_logs(self, services: list[ServiceDefinition], *, retention_days: int = DEFAULT_LOG_RETENTION_DAYS) -> list[str]:
+        if retention_days <= 0:
+            return []
+
+        cutoff = datetime.now().astimezone().timestamp() - (retention_days * 86400)
+        pruned: list[str] = []
+        seen: set[str] = set()
+
+        for service in services:
+            for source in service.log_sources:
+                resolved = str(source.path.resolve())
+                if resolved in seen:
+                    continue
+                seen.add(resolved)
+                if self._prune_log_source(service=service, source=source, cutoff_epoch=cutoff):
+                    pruned.append(resolved)
+
+        return pruned
+
+    def _prune_log_source(self, *, service: ServiceDefinition, source: ServiceLogSource, cutoff_epoch: float) -> bool:
+        path = source.path
+        if not path.exists():
+            return False
+
+        try:
+            raw_text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+
+        if not raw_text:
+            return False
+
+        lines = raw_text.splitlines()
+        kept: list[str] = []
+        last_keep = True
+        changed = False
+
+        for line in lines:
+            parsed = self.parse_line(service=service, source=source, line=line, fallback_timestamp=None)
+            parsed_epoch = self._timestamp_to_epoch(parsed.timestamp)
+            if parsed_epoch is None:
+                keep_line = last_keep
+            else:
+                keep_line = parsed_epoch >= cutoff_epoch
+                last_keep = keep_line
+            if keep_line:
+                kept.append(line)
+            else:
+                changed = True
+
+        if not changed:
+            return False
+
+        out_text = "\n".join(kept)
+        if raw_text.endswith(("\n", "\r")) and out_text:
+            out_text += "\n"
+        try:
+            path.write_text(out_text, encoding="utf-8")
+        except OSError:
+            return False
+        return True
+
+    @staticmethod
+    def _timestamp_to_epoch(value: str | None) -> float | None:
+        if not value:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.astimezone()
+        return parsed.timestamp()
 
     def parse_line(
         self,
