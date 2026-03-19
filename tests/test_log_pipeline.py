@@ -109,3 +109,42 @@ def test_pipeline_keeps_fallback_timestamp_for_plain_text_logs():
 
         assert entry.event == "log.line"
         assert entry.timestamp == fallback_timestamp
+
+
+def test_prune_old_logs_removes_entries_older_than_retention_window():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        rules_path = tmp_dir / "rules.json"
+        log_path = tmp_dir / "db.log"
+        _write_json(rules_path, {"rule_sets": {"default": []}})
+        log_path.write_text(
+            "\n".join(
+                [
+                    "[DB_DEV_MCP] 2026-02-20T10:00:00.000Z query_in {\"tool\":\"db_dev_read\",\"sql\":\"select 1\"}",
+                    "stack line old",
+                    "[DB_DEV_MCP] 2026-03-19T09:00:00.000Z query_out {\"tool\":\"db_dev_read\",\"response\":{\"rowCount\":1}}",
+                    "stack line new",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        engine = LogRuleEngine(rules_path)
+        pipeline = LogPipeline(engine)
+        service = ServiceDefinition(
+            service_id="llm-db-dev-mcp",
+            name="LLM DB DEV MCP",
+            log_sources=[ServiceLogSource(path=log_path, channel="stdout")],
+            parser_chain=["json", "python", "uvicorn_access", "node_deprecation", "db_mcp_event"],
+            rule_sets=[],
+        )
+
+        pruned = pipeline.prune_old_logs([service], retention_days=15)
+
+        assert str(log_path.resolve()) in pruned
+        final_text = log_path.read_text(encoding="utf-8")
+        assert "2026-02-20T10:00:00.000Z" not in final_text
+        assert "stack line old" not in final_text
+        assert "2026-03-19T09:00:00.000Z" in final_text
+        assert "stack line new" in final_text

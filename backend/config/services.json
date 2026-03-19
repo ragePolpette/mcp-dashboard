@@ -166,7 +166,8 @@
         "json",
         "python",
         "uvicorn_access",
-        "node_deprecation"
+        "node_deprecation",
+        "db_mcp_event"
       ],
       "rule_sets": [
         "llm-db-dev-mcp"
@@ -239,7 +240,8 @@
         "json",
         "python",
         "uvicorn_access",
-        "node_deprecation"
+        "node_deprecation",
+        "db_mcp_event"
       ],
       "rule_sets": [
         "llm-db-prod-mcp"
