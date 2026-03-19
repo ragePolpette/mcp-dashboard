@@ -17,6 +17,9 @@ _UVICORN_ACCESS_RE = re.compile(
 _NODE_DEPRECATION_RE = re.compile(
     r"^\(node:(?P<pid>\d+)\)\s+\[(?P<code>[A-Z0-9]+)\]\s+DeprecationWarning:\s+(?P<message>.*)$"
 )
+_DB_MCP_EVENT_RE = re.compile(
+    r"^\[(?P<logger>DB_(?:DEV|PROD)_MCP)\]\s+(?P<timestamp>\d{4}-\d{2}-\d{2}T[0-9:.]+Z)\s+(?P<event>[a-z_]+)\s+(?P<payload>\{.*\})$"
+)
 
 
 def _normalize_level(value: str | None, fallback: str = "INFO") -> str:
@@ -98,11 +101,37 @@ def _apply_node_deprecation_parser(line: str, entry: ParsedLogEntry) -> bool:
     return True
 
 
+def _apply_db_mcp_event_parser(line: str, entry: ParsedLogEntry) -> bool:
+    match = _DB_MCP_EVENT_RE.match(line.strip())
+    if not match:
+        return False
+
+    payload_text = match.group("payload")
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+
+    event = match.group("event")
+    entry.raw = line
+    entry.logger = match.group("logger")
+    entry.timestamp = match.group("timestamp")
+    entry.event = event
+    entry.fields.update(payload)
+    entry.level = _normalize_level(str(payload.get("level") or entry.level or "INFO"))
+    entry.message = str(payload.get("message") or line.rstrip("\r\n")).strip()
+    entry.tags.extend(["db-mcp", "embedded-timestamp"])
+    return True
+
+
 _PARSER_MAP: dict[str, Any] = {
     "json": _apply_json_parser,
     "python": _apply_python_parser,
     "uvicorn_access": _apply_uvicorn_access_parser,
     "node_deprecation": _apply_node_deprecation_parser,
+    "db_mcp_event": _apply_db_mcp_event_parser,
 }
 
 

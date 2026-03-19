@@ -7,7 +7,8 @@
         "json",
         "python",
         "uvicorn_access",
-        "node_deprecation"
+        "node_deprecation",
+        "db_mcp_event"
       ],
       "rule_sets": [
         "llm-context"
@@ -81,7 +82,8 @@
         "json",
         "python",
         "uvicorn_access",
-        "node_deprecation"
+        "node_deprecation",
+        "db_mcp_event"
       ],
       "rule_sets": [
         "llm-memory"
