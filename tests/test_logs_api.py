@@ -13,6 +13,8 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from app.main import app  # noqa: E402
 from app.models import ServiceControlDefinition, ServiceDefinition, ServiceLogSource  # noqa: E402
+from app.log_pipeline import LogPipeline  # noqa: E402
+from app.log_rules import LogRuleEngine  # noqa: E402
 
 
 def test_logs_endpoint_returns_newest_first(monkeypatch):
@@ -119,3 +121,30 @@ def test_clear_logs_truncates_service_log_files(monkeypatch):
         assert source_log.read_text(encoding="utf-8") == ""
         assert stdout_log.read_text(encoding="utf-8") == ""
         assert stderr_log.read_text(encoding="utf-8") == ""
+
+
+def test_db_mcp_parser_uses_embedded_timestamp_for_query_events():
+    service = ServiceDefinition(
+        service_id="svc-db-prod",
+        name="Service DB Prod",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
+        parser_chain=["json", "python", "uvicorn_access", "node_deprecation", "db_mcp_event"],
+    )
+    source = service.log_sources[0]
+    line = (
+        '[DB_PROD_MCP] 2026-03-18T14:05:56.147Z query_out '
+        '{"tool":"db_prod_read_anonymized","response":{"success":true,"rowCount":20}}'
+    )
+    pipeline = LogPipeline(LogRuleEngine(ROOT / "backend" / "config" / "log_rules.json"))
+
+    parsed = pipeline.parse_line(
+        service=service,
+        source=source,
+        line=line,
+        fallback_timestamp="2026-03-19T09:39:12+01:00",
+    )
+
+    assert parsed.timestamp == "2026-03-18T14:05:56.147Z"
+    assert parsed.event == "query_out"
+    assert parsed.logger == "DB_PROD_MCP"
+    assert parsed.fields["tool"] == "db_prod_read_anonymized"
