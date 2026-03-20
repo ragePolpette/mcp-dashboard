@@ -355,16 +355,17 @@ button:disabled {
   background: transparent;
   border-radius: 0;
   font-size: 1.5rem;
-  color: var(--accent);
+  color: #c2c8d0;
   box-shadow: none;
   z-index: 40;
 }
 
 .settings-fab:hover,
-.settings-fab:focus-visible {
+.settings-fab:focus-visible,
+.settings-fab:active {
   border: none;
   background: transparent;
-  color: #ffd792;
+  color: #ffffff;
 }
 
 .settings-panel {
