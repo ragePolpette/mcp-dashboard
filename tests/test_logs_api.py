@@ -40,6 +40,32 @@ def test_logs_endpoint_returns_newest_first(monkeypatch):
     assert [entry["event"] for entry in payload["entries"]] == ["new", "mid", "old"]
 
 
+def test_services_endpoint_includes_kind_group_and_capabilities(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="llm-context",
+            name="LLM Context",
+            kind="rag",
+            group="knowledge",
+            capabilities=["logs", "activity", "alerts"],
+            log_sources=[ServiceLogSource(path=Path("ctx.log"), channel="stderr", tags=["runtime"])],
+        )
+    ]
+
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+
+    client = TestClient(app)
+    response = client.get("/api/services")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == "llm-context"
+    assert payload[0]["kind"] == "rag"
+    assert payload[0]["group"] == "knowledge"
+    assert payload[0]["capabilities"] == ["logs", "activity", "alerts"]
+
+
 def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
     service = ServiceDefinition(
         service_id="svc-db",

@@ -47,6 +47,64 @@ const activityByService = new Map();
 const alertsByService = new Map();
 const advancedFilters = { level: "", event: "", channel: "", source: "", text: "" };
 
+function normalizeServiceDefinition(service) {
+  return {
+    ...service,
+    kind: String(service?.kind || "custom").toLowerCase(),
+    group: String(service?.group || "custom").toLowerCase(),
+    capabilities: Array.isArray(service?.capabilities)
+      ? [...new Set(service.capabilities.map(cap => String(cap).toLowerCase()).filter(Boolean))]
+      : []
+  };
+}
+
+function serviceKind(serviceOrId) {
+  if (!serviceOrId) {
+    return "custom";
+  }
+  if (typeof serviceOrId === "string") {
+    return serviceKind(services.find(service => service.id === serviceOrId));
+  }
+  return String(serviceOrId.kind || "custom").toLowerCase();
+}
+
+function serviceGroup(serviceOrId) {
+  if (!serviceOrId) {
+    return "custom";
+  }
+  if (typeof serviceOrId === "string") {
+    return serviceGroup(services.find(service => service.id === serviceOrId));
+  }
+  return String(serviceOrId.group || "custom").toLowerCase();
+}
+
+function hasCapability(serviceOrId, capability) {
+  const requested = String(capability || "").toLowerCase();
+  if (!requested) {
+    return false;
+  }
+  if (typeof serviceOrId === "string") {
+    return hasCapability(services.find(service => service.id === serviceOrId), requested);
+  }
+  return Array.isArray(serviceOrId?.capabilities) && serviceOrId.capabilities.includes(requested);
+}
+
+function supportsQueryInspector(serviceOrId) {
+  return hasCapability(serviceOrId, "query_inspector");
+}
+
+function supportsActivity(serviceOrId) {
+  return hasCapability(serviceOrId, "activity");
+}
+
+function supportsAlerts(serviceOrId) {
+  return hasCapability(serviceOrId, "alerts");
+}
+
+function supportsRuntimeOptions(serviceOrId) {
+  return hasCapability(serviceOrId, "runtime_options");
+}
+
 function getServiceState(serviceId) {
   if (!stateByService.has(serviceId)) {
     stateByService.set(serviceId, {
@@ -103,14 +161,6 @@ function getServiceAlerts(serviceId) {
     });
   }
   return alertsByService.get(serviceId);
-}
-
-function isDbService(serviceId) {
-  return String(serviceId || "").startsWith("llm-db-");
-}
-
-function isActivityService(serviceId) {
-  return serviceId === "llm-context" || serviceId === "llm-memory";
 }
 
 function effectiveRuntimeState(runtime, uiState = null) {
@@ -258,6 +308,55 @@ function sourceSummaryLabel(source) {
   const parts = path.split(/[\\/]/).filter(Boolean);
   const fileName = parts.length ? parts[parts.length - 1] : path || "n/d";
   return `${scope} ${channel} - ${fileName}`;
+}
+
+function serviceGroupLabel(service) {
+  const labels = {
+    database: "Database",
+    knowledge: "Knowledge",
+    runtime: "Runtime",
+    custom: "Custom"
+  };
+  return labels[serviceGroup(service)] || "Custom";
+}
+
+function serviceLatestEventSummary(entry) {
+  if (!entry) {
+    return "Ultimo evento: n/d";
+  }
+  const level = String(entry.level || "INFO").toUpperCase();
+  const eventName = entry.event || "log.line";
+  const message = compactPreviewText(entryDisplayMessage(entry), 110);
+  return `${formatTimestamp(entry.timestamp)} | ${level} ${eventName} | ${message}`;
+}
+
+function serviceSummaryLine(service, metrics, runtime) {
+  const reqMin = Number(metrics.requests_per_minute || 0);
+  const errRate = Number(metrics.error_rate || 0) * 100;
+
+  if (serviceKind(service) === "db") {
+    return `Req/min ${reqMin} | Error ${errRate.toFixed(1)}% | Query ${metrics.db_queries_count || 0} | Avg rows ${formatNumber(metrics.db_avg_row_count)}`;
+  }
+  if (serviceKind(service) === "memory") {
+    return `Req/min ${reqMin} | Error ${errRate.toFixed(1)}% | Saved oggi ${metrics.memory_saved_today || 0} | Retrieved oggi ${metrics.memory_retrieved_today || 0}`;
+  }
+  if (serviceKind(service) === "rag") {
+    const contextMode = llmContextModeLabel(runtime);
+    const retrievals = `Retrieved oggi ${metrics.context_retrieved_today || 0}`;
+    return contextMode ? `${retrievals} | ${contextMode}` : retrievals;
+  }
+  return `Req/min ${reqMin} | Error ${errRate.toFixed(1)}%`;
+}
+
+function serviceOrderWeight(service) {
+  const group = serviceGroup(service);
+  const groupWeight = {
+    knowledge: 10,
+    database: 20,
+    runtime: 30,
+    custom: 40
+  };
+  return groupWeight[group] ?? 99;
 }
 
 function toDisplayText(value) {
@@ -914,69 +1013,37 @@ function renderCards() {
     const alertPayload = getServiceAlerts(service.id);
     const alertStatus = String(alertPayload.status || "ok").toLowerCase();
     head.innerHTML = `
-      <div class="widget-title">${service.name}</div>
+      <div>
+        <div class="widget-eyebrow">${serviceGroupLabel(service)}</div>
+        <div class="widget-title">${service.name}</div>
+      </div>
       <div class="status">
         <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
-        <span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>
+        ${supportsAlerts(service) ? `<span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>` : ""}
       </div>
     `;
 
     const meta = document.createElement("div");
-    meta.className = "widget-meta";
+    meta.className = "widget-meta widget-meta-stack";
     const endpoint = runtime.port ? `${runtime.host || "127.0.0.1"}:${runtime.port}` : "n/d";
     const pidLabel = runtime.pid ? `PID ${runtime.pid}` : "PID n/d";
-    const lastEvent = last
-      ? `Ultimo log: ${formatTimestamp(last.timestamp)} | ${(last.level || "INFO")} ${(last.event || "log.line")}`
-      : "Ultimo log: n/d";
+    const lastEvent = serviceLatestEventSummary(last);
     const optsCount = service.control?.options_count || 0;
-    const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
-    meta.textContent = `${endpoint} | ${pidLabel} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | ${lastEvent} | Opzioni: ${optsCount}`;
+    const lineOne = document.createElement("div");
+    lineOne.textContent = `${endpoint} | ${pidLabel}`;
+    const lineTwo = document.createElement("div");
+    lineTwo.textContent = `Health: ${healthLabel(runtime)} | Opzioni: ${optsCount}`;
+    const lineThree = document.createElement("div");
+    lineThree.className = "widget-event-line";
+    lineThree.textContent = lastEvent;
+    meta.appendChild(lineOne);
+    meta.appendChild(lineTwo);
+    meta.appendChild(lineThree);
 
     const metrics = getServiceMetrics(service.id);
     const kpi = document.createElement("div");
     kpi.className = "widget-kpi";
-    const reqMin = Number(metrics.requests_per_minute || 0);
-    const errRate = Number(metrics.error_rate || 0) * 100;
-    let domainKpi = "";
-    if (isDbService(service.id)) {
-      domainKpi = `avg rows ${formatNumber(metrics.db_avg_row_count)} (${metrics.db_queries_count || 0} query)`;
-    } else if (service.id === "llm-memory") {
-      domainKpi = `saved oggi ${metrics.memory_saved_today || 0} | retrieved oggi ${metrics.memory_retrieved_today || 0}`;
-    } else if (service.id === "llm-context") {
-      domainKpi = `retrieved oggi ${metrics.context_retrieved_today || 0}`;
-    }
-    kpi.textContent = `Req/min ${reqMin} | Error ${errRate.toFixed(1)}%${domainKpi ? ` | ${domainKpi}` : ""}`;
-
-    const trend = document.createElement("div");
-    trend.className = "widget-trend";
-    let trendData = metrics.activity_series || [];
-    let trendColor = "#73c2ff";
-    if (isDbService(service.id)) {
-      trendData = metrics.db_row_count_series || [];
-      trendColor = "#f2b84b";
-    } else if (service.id === "llm-context") {
-      trendData = metrics.context_retrieval_series || [];
-      trendColor = "#7fdc8d";
-    }
-    trend.innerHTML = sparklineSvg(trendData, trendColor);
-
-    const list = document.createElement("ul");
-    list.className = "widget-list";
-    if (!entries.length) {
-      const li = document.createElement("li");
-      li.textContent = "Nessun log disponibile.";
-      list.appendChild(li);
-    } else {
-      const preview = entries.slice(0, 3);
-      for (const entry of preview) {
-        const li = document.createElement("li");
-        const level = entry.level || "INFO";
-        const eventName = entry.event || "log.line";
-        const message = compactPreviewText(entryDisplayMessage(entry), 150);
-        li.innerHTML = `<span class="entry-level has-tooltip" tabindex="0" data-tooltip="${levelTooltip(level)}" title="${levelTooltip(level)}" aria-label="${levelTooltip(level)}">${level}</span><span class="widget-entry-text">${formatTimestamp(entry.timestamp)} | ${eventName} - ${message}</span>`;
-        list.appendChild(li);
-      }
-    }
+    kpi.textContent = serviceSummaryLine(service, metrics, runtime);
 
     const controls = document.createElement("div");
     controls.className = "widget-actions";
@@ -1030,8 +1097,6 @@ function renderCards() {
     card.appendChild(head);
     card.appendChild(meta);
     card.appendChild(kpi);
-    card.appendChild(trend);
-    card.appendChild(list);
     card.appendChild(controls);
     widgetGrid.appendChild(card);
   }
@@ -1149,7 +1214,15 @@ function collectOptionsFromForm() {
 }
 
 async function loadServices() {
-  services = await apiJson("/api/services");
+  services = (await apiJson("/api/services"))
+    .map(normalizeServiceDefinition)
+    .sort((left, right) => {
+      const weightDiff = serviceOrderWeight(left) - serviceOrderWeight(right);
+      if (weightDiff !== 0) {
+        return weightDiff;
+      }
+      return String(left.name || left.id).localeCompare(String(right.name || right.id));
+    });
   for (const service of services) {
     getServiceState(service.id);
     const runtime = getRuntimeStatus(service.id);
@@ -1175,7 +1248,7 @@ async function loadServiceTail(serviceId, tail = 30) {
 }
 
 async function loadServiceQueries(serviceId, tail = 2000) {
-  if (!isDbService(serviceId)) {
+  if (!supportsQueryInspector(serviceId)) {
     queriesByService.set(serviceId, []);
     return;
   }
@@ -1297,7 +1370,7 @@ async function controlAction(serviceId, action) {
 }
 
 async function loadServiceActivity(serviceId, tail = 2000) {
-  if (!isActivityService(serviceId)) {
+  if (!supportsActivity(serviceId)) {
     activityByService.set(serviceId, []);
     return;
   }
@@ -1346,8 +1419,11 @@ function renderAdvancedMeta(service) {
     : "control not configured";
   const streamState = advancedEventSource ? "active" : "stopped";
   const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
-  const contextMode = service.id === "llm-context" ? llmContextModeLabel(runtime) : "";
-  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState} | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0}) | Sources: ${sourceSummary}`;
+  const contextMode = serviceKind(service) === "rag" ? llmContextModeLabel(runtime) : "";
+  const alertText = supportsAlerts(service)
+    ? ` | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0})`
+    : "";
+  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState}${alertText} | Sources: ${sourceSummary}`;
 }
 
 async function openAdvanced(serviceId) {
@@ -1395,22 +1471,26 @@ async function openAdvanced(serviceId) {
   syncAdvancedFiltersFromInputs();
   renderAdvancedEntriesForService(serviceId);
 
-  if (isDbService(serviceId)) {
+  if (supportsQueryInspector(service)) {
     queryPanel.classList.remove("hidden");
     renderQueriesForAdvanced(serviceId);
   } else {
     queryPanel.classList.add("hidden");
     clearQueryRows();
   }
-  if (isActivityService(serviceId)) {
+  if (supportsActivity(service)) {
     activityPanel.classList.remove("hidden");
     renderActivityForAdvanced(serviceId);
   } else {
     activityPanel.classList.add("hidden");
     clearActivityRows();
   }
-  alertPanel.classList.remove("hidden");
-  renderAlertsForAdvanced(serviceId);
+  if (supportsAlerts(service)) {
+    alertPanel.classList.remove("hidden");
+    renderAlertsForAdvanced(serviceId);
+  } else {
+    alertPanel.classList.add("hidden");
+  }
   renderCards();
 }
 
@@ -1442,13 +1522,15 @@ async function reloadAdvanced() {
   rebuildEventFilterOptions(state.entries || []);
   syncAdvancedFiltersFromInputs();
   renderAdvancedEntriesForService(advancedServiceId);
-  if (isDbService(advancedServiceId)) {
+  if (supportsQueryInspector(advancedServiceId)) {
     renderQueriesForAdvanced(advancedServiceId);
   }
-  if (isActivityService(advancedServiceId)) {
+  if (supportsActivity(advancedServiceId)) {
     renderActivityForAdvanced(advancedServiceId);
   }
-  renderAlertsForAdvanced(advancedServiceId);
+  if (supportsAlerts(advancedServiceId)) {
+    renderAlertsForAdvanced(advancedServiceId);
+  }
   renderCards();
 }
 
@@ -1475,10 +1557,10 @@ function startAdvancedStream() {
       if (entryMatchesAdvancedFilters(entry)) {
         appendAdvancedEntries([entry], { prepend: true });
       }
-      if (isDbService(advancedServiceId) && isDbQueryEvent(entry)) {
+      if (supportsQueryInspector(advancedServiceId) && isDbQueryEvent(entry)) {
         loadServiceQueries(advancedServiceId, 2000).then(() => renderQueriesForAdvanced(advancedServiceId));
       }
-      if (isActivityService(advancedServiceId)) {
+      if (supportsActivity(advancedServiceId)) {
         loadServiceActivity(advancedServiceId, 2000).then(() => renderActivityForAdvanced(advancedServiceId));
       }
       Promise.all([
@@ -1510,11 +1592,11 @@ applyFilterBtn.addEventListener("click", async () => {
     return;
   }
   renderAdvancedEntriesForService(advancedServiceId);
-  if (isDbService(advancedServiceId)) {
+  if (supportsQueryInspector(advancedServiceId)) {
     await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderQueriesForAdvanced(advancedServiceId);
   }
-  if (isActivityService(advancedServiceId)) {
+  if (supportsActivity(advancedServiceId)) {
     await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderActivityForAdvanced(advancedServiceId);
   }
@@ -1536,11 +1618,11 @@ clearFilterBtn.addEventListener("click", async () => {
   const state = getServiceState(advancedServiceId);
   rebuildEventFilterOptions(state.entries || []);
   renderAdvancedEntriesForService(advancedServiceId);
-  if (isDbService(advancedServiceId)) {
+  if (supportsQueryInspector(advancedServiceId)) {
     await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderQueriesForAdvanced(advancedServiceId);
   }
-  if (isActivityService(advancedServiceId)) {
+  if (supportsActivity(advancedServiceId)) {
     await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderActivityForAdvanced(advancedServiceId);
   }
@@ -1554,7 +1636,7 @@ clearLogsBtn.addEventListener("click", async () => {
 refreshAllBtn.addEventListener("click", () => refreshAll(30));
 killAllBtn.addEventListener("click", killEmAll);
 reloadAlertsBtn.addEventListener("click", async () => {
-  if (!advancedServiceId) {
+  if (!advancedServiceId || !supportsAlerts(advancedServiceId)) {
     return;
   }
   await refreshServiceAlerts(advancedServiceId);
@@ -1562,14 +1644,14 @@ reloadAlertsBtn.addEventListener("click", async () => {
   renderCards();
 });
 reloadQueriesBtn.addEventListener("click", async () => {
-  if (!advancedServiceId || !isDbService(advancedServiceId)) {
+  if (!advancedServiceId || !supportsQueryInspector(advancedServiceId)) {
     return;
   }
   await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
   renderQueriesForAdvanced(advancedServiceId);
 });
 reloadActivityBtn.addEventListener("click", async () => {
-  if (!advancedServiceId || !isActivityService(advancedServiceId)) {
+  if (!advancedServiceId || !supportsActivity(advancedServiceId)) {
     return;
   }
   await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
@@ -1593,7 +1675,9 @@ async function boot() {
         const service = services.find(s => s.id === advancedServiceId);
         if (service) {
           renderAdvancedMeta(service);
-          renderAlertsForAdvanced(service.id);
+          if (supportsAlerts(service)) {
+            renderAlertsForAdvanced(service.id);
+          }
         }
       }
     });
