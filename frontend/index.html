@@ -11,9 +11,10 @@
     <header class="topbar">
       <div>
         <h1>MCP Dashboard</h1>
-        <p>Vista widget di tutti i servizi MCP, con ingresso rapido al pannello avanzato.</p>
+        <p id="dashboardPidText">PID: n/d</p>
       </div>
       <div class="topbar-actions">
+        <button id="killAllBtn" class="btn-danger">Kill 'em All</button>
         <button id="refreshAllBtn">Aggiorna Tutto</button>
       </div>
     </header>
@@ -81,22 +82,6 @@
         <ul id="alertList" class="alert-list"></ul>
       </section>
 
-      <div class="log-pane">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Level</th>
-              <th>Event</th>
-              <th>Channel</th>
-              <th>Message</th>
-              <th>Meta</th>
-            </tr>
-          </thead>
-          <tbody id="logBody"></tbody>
-        </table>
-      </div>
-
       <section id="queryPanel" class="query-panel hidden">
         <div class="query-panel-header">
           <h3>Query Inspector (DB)</h3>
@@ -116,6 +101,22 @@
           </table>
         </div>
       </section>
+
+      <div class="log-pane">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Level</th>
+              <th>Event</th>
+              <th>Channel</th>
+              <th>Message</th>
+              <th>Meta</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
     </section>
   </main>
 

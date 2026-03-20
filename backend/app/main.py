@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -296,6 +299,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/dashboard/status")
+def dashboard_status() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "pid": os.getpid(),
+        "service_count": len(registry.list_services()),
+        "evaluated_at": datetime.now().astimezone().isoformat(),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     html_path = FRONTEND_DIR / "index.html"
@@ -336,6 +349,45 @@ def list_services() -> list[dict[str, Any]]:
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     return process_manager.status(service)
+
+
+def _schedule_dashboard_shutdown(delay_seconds: float = 0.35) -> None:
+    def _shutdown() -> None:
+        time.sleep(delay_seconds)
+        os._exit(0)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+
+
+@app.post("/api/control/kill-all")
+def kill_all() -> dict[str, Any]:
+    stopped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for service in registry.list_services():
+        if service.control is None or service.service_id == "mcp-dashboard":
+            continue
+        try:
+            result = process_manager.stop(service)
+            stopped.append(
+                {
+                    "service_id": service.service_id,
+                    "ok": bool(result.get("ok")),
+                    "result": result.get("result"),
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive surface for control plane
+            failed.append({"service_id": service.service_id, "error": str(exc)})
+
+    _schedule_dashboard_shutdown()
+    return {
+        "ok": True,
+        "action": "kill-all",
+        "dashboard_pid": os.getpid(),
+        "stopped": stopped,
+        "failed": failed,
+        "scheduled_dashboard_shutdown": True,
+    }
 
 
 @app.get("/api/services/{service_id}/options")

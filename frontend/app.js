@@ -1,4 +1,6 @@
 const widgetGrid = document.getElementById("widgetGrid");
+const dashboardPidText = document.getElementById("dashboardPidText");
+const killAllBtn = document.getElementById("killAllBtn");
 const refreshAllBtn = document.getElementById("refreshAllBtn");
 
 const advancedPanel = document.getElementById("advancedPanel");
@@ -32,6 +34,7 @@ const saveOptionsBtn = document.getElementById("saveOptionsBtn");
 let services = [];
 let advancedServiceId = null;
 let advancedEventSource = null;
+let dashboardStatus = { pid: null };
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
@@ -814,6 +817,31 @@ async function apiJson(url, options = undefined) {
   return payload;
 }
 
+async function loadDashboardStatus() {
+  const payload = await apiJson("/api/dashboard/status");
+  dashboardStatus = payload || { pid: null };
+  dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"}`;
+}
+
+async function killEmAll() {
+  if (!window.confirm("Questo fermerà tutti gli MCP e la dashboard. Continuare?")) {
+    return;
+  }
+  killAllBtn.disabled = true;
+  refreshAllBtn.disabled = true;
+  stopAdvancedStream();
+  try {
+    await apiJson("/api/control/kill-all", { method: "POST" });
+    dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"} | arresto in corso`;
+    widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Shutdown</div><div class="widget-meta">Kill 'em All eseguito. La dashboard si sta arrestando.</div></article>`;
+    advancedPanel.classList.add("hidden");
+  } catch (error) {
+    killAllBtn.disabled = false;
+    refreshAllBtn.disabled = false;
+    window.alert(`Kill 'em All fallito: ${error.message}`);
+  }
+}
+
 function renderCards() {
   widgetGrid.innerHTML = "";
 
@@ -1432,6 +1460,7 @@ clearLogsBtn.addEventListener("click", async () => {
   await clearServiceLogs(advancedServiceId);
 });
 refreshAllBtn.addEventListener("click", () => refreshAll(30));
+killAllBtn.addEventListener("click", killEmAll);
 reloadAlertsBtn.addEventListener("click", async () => {
   if (!advancedServiceId) {
     return;
@@ -1456,9 +1485,10 @@ saveOptionsBtn.addEventListener("click", async () => {
 
 async function boot() {
   await loadServices();
+  await loadDashboardStatus();
   await refreshAll(30);
   setInterval(() => {
-    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts()]).then(() => {
+    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), loadDashboardStatus()]).then(() => {
       renderCards();
       if (advancedServiceId) {
         const service = services.find(s => s.id === advancedServiceId);

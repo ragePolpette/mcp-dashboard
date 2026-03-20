@@ -148,3 +148,52 @@ def test_db_mcp_parser_uses_embedded_timestamp_for_query_events():
     assert parsed.event == "query_out"
     assert parsed.logger == "DB_PROD_MCP"
     assert parsed.fields["tool"] == "db_prod_read_anonymized"
+
+
+def test_dashboard_status_reports_pid(monkeypatch):
+    monkeypatch.setattr("app.main.os.getpid", lambda: 4242)
+
+    client = TestClient(app)
+    response = client.get("/api/dashboard/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["pid"] == 4242
+
+
+def test_kill_all_stops_services_and_schedules_dashboard_shutdown(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="llm-context",
+            name="LLM Context",
+            log_sources=[ServiceLogSource(path=Path("ctx.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "ctx"]),
+        ),
+        ServiceDefinition(
+            service_id="mcp-dashboard",
+            name="MCP Dashboard",
+            log_sources=[ServiceLogSource(path=Path("dash.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "dash"]),
+        ),
+    ]
+    stopped: list[str] = []
+    scheduled: list[float] = []
+
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+    monkeypatch.setattr(
+        "app.main.process_manager.stop",
+        lambda service: stopped.append(service.service_id) or {"ok": True, "result": "stopped"},
+    )
+    monkeypatch.setattr("app.main._schedule_dashboard_shutdown", lambda delay_seconds=0.35: scheduled.append(delay_seconds))
+    monkeypatch.setattr("app.main.os.getpid", lambda: 9001)
+
+    client = TestClient(app)
+    response = client.post("/api/control/kill-all")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["dashboard_pid"] == 9001
+    assert stopped == ["llm-context"]
+    assert scheduled == [0.35]
