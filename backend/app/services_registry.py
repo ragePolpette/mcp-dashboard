@@ -58,10 +58,36 @@ def _promote_legacy_runtime_source(source: ServiceLogSource) -> ServiceLogSource
 class ServiceRegistry:
     """Loads and serves service definitions."""
 
+    _VALID_KINDS = {"db", "rag", "memory", "ops", "custom"}
+    _VALID_GROUPS = {"database", "knowledge", "runtime", "custom"}
+
     def __init__(self, config_path: Path):
         self.config_path = config_path
         self._services: dict[str, ServiceDefinition] = {}
         self.reload()
+
+    def _parse_kind(self, item: dict) -> str:
+        value = str(item.get("kind", "custom")).strip().lower() or "custom"
+        if value not in self._VALID_KINDS:
+            return "custom"
+        return value
+
+    def _parse_group(self, item: dict) -> str:
+        value = str(item.get("group", "custom")).strip().lower() or "custom"
+        if value not in self._VALID_GROUPS:
+            return "custom"
+        return value
+
+    def _parse_capabilities(self, item: dict) -> list[str]:
+        seen: set[str] = set()
+        out: list[str] = []
+        for raw in item.get("capabilities") or []:
+            capability = str(raw).strip().lower()
+            if not capability or capability in seen:
+                continue
+            seen.add(capability)
+            out.append(capability)
+        return out
 
     def _parse_options(self, control: dict) -> list[ServiceOptionDefinition]:
         out: list[ServiceOptionDefinition] = []
@@ -178,6 +204,9 @@ class ServiceRegistry:
                 service_id=service_id,
                 name=str(item.get("name", service_id)),
                 log_sources=sources,
+                kind=self._parse_kind(item),
+                group=self._parse_group(item),
+                capabilities=self._parse_capabilities(item),
                 parser_chain=[str(name) for name in (item.get("parser_chain") or [])],
                 rule_sets=[str(name) for name in (item.get("rule_sets") or [])],
                 control=self._parse_control(base_dir, item),

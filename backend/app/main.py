@@ -427,6 +427,9 @@ def list_services() -> list[dict[str, Any]]:
             {
                 "id": service.service_id,
                 "name": service.name,
+                "kind": service.kind,
+                "group": service.group,
+                "capabilities": service.capabilities,
                 "log_sources": [
                     {"path": str(src.path), "channel": src.channel, "tags": src.tags}
                     for src in service.log_sources

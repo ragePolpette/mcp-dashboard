@@ -57,6 +57,30 @@
         "message": "Reject di compliance ripetuti negli ultimi 10 minuti."
       }
     ],
+    "llm-bitbucket-mcp": [
+      {
+        "id": "bb.auth_error.alert",
+        "name": "Errore auth Bitbucket",
+        "kind": "event_count_threshold",
+        "event": "bb.auth_error",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "alert",
+        "message": "Errore di autenticazione Bitbucket. Verifica App Password."
+      },
+      {
+        "id": "bb.rate_limited.warn",
+        "name": "Rate limit Bitbucket",
+        "kind": "event_count_threshold",
+        "event": "bb.rate_limited",
+        "window_minutes": 5,
+        "op": ">=",
+        "threshold": 3,
+        "severity": "warn",
+        "message": "Rate limiting frequente su Bitbucket API."
+      }
+    ],
     "llm-db-dev-mcp": [
       {
         "id": "db.dev.max_rows.warn",

@@ -153,6 +153,36 @@ def _apply_mcp_activity_parser(line: str, entry: ParsedLogEntry) -> bool:
     return True
 
 
+_LLM_BB_MCP_EVENT_RE = re.compile(
+    r"^\[(?P<logger>LLM_BB_MCP)\]\s+(?P<timestamp>\d{4}-\d{2}-\d{2}T[0-9:.]+Z)\s+(?P<event>[a-z_.]+)\s+(?P<payload>\{.*\})$"
+)
+
+
+def _apply_llm_bb_mcp_event_parser(line: str, entry: ParsedLogEntry) -> bool:
+    match = _LLM_BB_MCP_EVENT_RE.match(line.strip())
+    if not match:
+        return False
+
+    payload_text = match.group("payload")
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+
+    event = match.group("event")
+    entry.raw = line
+    entry.logger = match.group("logger")
+    entry.timestamp = match.group("timestamp")
+    entry.event = event
+    entry.fields.update(payload)
+    entry.level = _normalize_level(str(payload.get("level") or entry.level or "INFO"))
+    entry.message = str(payload.get("message") or line.rstrip("\r\n")).strip()
+    entry.tags.extend(["llm-bb-mcp", "embedded-timestamp"])
+    return True
+
+
 _PARSER_MAP: dict[str, Any] = {
     "json": _apply_json_parser,
     "python": _apply_python_parser,
@@ -160,6 +190,7 @@ _PARSER_MAP: dict[str, Any] = {
     "node_deprecation": _apply_node_deprecation_parser,
     "db_mcp_event": _apply_db_mcp_event_parser,
     "mcp_activity": _apply_mcp_activity_parser,
+    "llm_bb_mcp_event": _apply_llm_bb_mcp_event_parser,
 }
 
 
