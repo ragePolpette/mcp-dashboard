@@ -148,3 +148,143 @@ def test_db_mcp_parser_uses_embedded_timestamp_for_query_events():
     assert parsed.event == "query_out"
     assert parsed.logger == "DB_PROD_MCP"
     assert parsed.fields["tool"] == "db_prod_read_anonymized"
+
+
+def test_mcp_activity_endpoint_builds_read_write_rows(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
+    )
+    entries = [
+        {
+            "timestamp": "2026-03-19T09:57:02.827691+00:00",
+            "event": "write_in",
+            "fields": {
+                "operation": "add",
+                "agent_id": "claude-code",
+                "content": "Regola bugfix...",
+            },
+        },
+        {
+            "timestamp": "2026-03-19T09:57:02.862197+00:00",
+            "event": "write_out",
+            "fields": {
+                "operation": "add",
+                "agent_id": "claude-code",
+                "success": True,
+                "entry_id": "abc",
+            },
+        },
+        {
+            "timestamp": "2026-03-18T13:39:23.301617+00:00",
+            "event": "query_in",
+            "fields": {
+                "operation": "search",
+                "agent_id": "claude-code",
+                "query": "test connessione",
+            },
+        },
+        {
+            "timestamp": "2026-03-18T13:39:24.301617+00:00",
+            "event": "query_out",
+            "fields": {
+                "operation": "search",
+                "agent_id": "claude-code",
+                "result_count": 1,
+                "has_results": True,
+            },
+        },
+    ]
+
+    monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
+    monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-memory/activity")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 2
+    assert payload["activity"][0]["tool"] == "add"
+    assert payload["activity"][0]["kind"] == "write"
+    assert "success=True" in payload["activity"][0]["response_text"]
+    assert payload["activity"][1]["tool"] == "search"
+    assert payload["activity"][1]["kind"] == "read"
+
+
+def test_mcp_activity_parser_reads_embedded_payload():
+    service = ServiceDefinition(
+        service_id="llm-context",
+        name="LLM Context",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
+        parser_chain=["json", "python", "uvicorn_access", "node_deprecation", "mcp_activity"],
+    )
+    source = service.log_sources[0]
+    line = (
+        '[MCP_ACTIVITY] {"timestamp":"2026-03-19T09:57:02.862197+00:00","server":"llm-memory",'
+        '"event":"write_out","operation":"add","agent_id":"claude-code","success":true}'
+    )
+    pipeline = LogPipeline(LogRuleEngine(ROOT / "backend" / "config" / "log_rules.json"))
+
+    parsed = pipeline.parse_line(
+        service=service,
+        source=source,
+        line=line,
+        fallback_timestamp="2026-03-19T10:00:00+01:00",
+    )
+
+    assert parsed.timestamp == "2026-03-19T09:57:02.862197+00:00"
+    assert parsed.event == "write_out"
+    assert parsed.logger == "MCP_ACTIVITY"
+    assert parsed.fields["operation"] == "add"
+    assert parsed.fields["success"] is True
+
+
+def test_dashboard_status_reports_pid(monkeypatch):
+    monkeypatch.setattr("app.main.os.getpid", lambda: 4242)
+
+    client = TestClient(app)
+    response = client.get("/api/dashboard/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["pid"] == 4242
+
+
+def test_kill_all_stops_services_and_schedules_dashboard_shutdown(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="llm-context",
+            name="LLM Context",
+            log_sources=[ServiceLogSource(path=Path("ctx.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "ctx"]),
+        ),
+        ServiceDefinition(
+            service_id="mcp-dashboard",
+            name="MCP Dashboard",
+            log_sources=[ServiceLogSource(path=Path("dash.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "dash"]),
+        ),
+    ]
+    stopped: list[str] = []
+    scheduled: list[float] = []
+
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+    monkeypatch.setattr(
+        "app.main.process_manager.stop",
+        lambda service: stopped.append(service.service_id) or {"ok": True, "result": "stopped"},
+    )
+    monkeypatch.setattr("app.main._schedule_dashboard_shutdown", lambda delay_seconds=0.35: scheduled.append(delay_seconds))
+    monkeypatch.setattr("app.main.os.getpid", lambda: 9001)
+
+    client = TestClient(app)
+    response = client.post("/api/control/kill-all")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert payload["dashboard_pid"] == 9001
+    assert stopped == ["llm-context"]
+    assert scheduled == [0.35]
