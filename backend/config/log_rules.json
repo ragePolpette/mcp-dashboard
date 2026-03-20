@@ -129,6 +129,30 @@
         ]
       }
     ],
+    "llm-sql-db-mcp": [
+      {
+        "contains": "Not Found: Unknown or expired session.",
+        "set": {
+          "event": "transport.invalid_session",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "mcp",
+          "session"
+        ]
+      },
+      {
+        "contains": "Field identification LLM failed.",
+        "set": {
+          "event": "sql-gateway.field_identification_failed",
+          "level": "WARN"
+        },
+        "add_tags": [
+          "sql-gateway",
+          "anonymization"
+        ]
+      }
+    ],
     "llm-bitbucket-mcp": [
       {
         "contains": "\"tool\":\"list_pull_requests\"",
