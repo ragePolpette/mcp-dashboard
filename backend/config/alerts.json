@@ -108,6 +108,20 @@
         "severity": "warn",
         "message": "Almeno una query PROD ha restituito >= 200 righe."
       }
+    ],
+    "llm-sql-db-mcp": [
+      {
+        "id": "db.sql-gateway.max_rows.warn",
+        "name": "Risposta query SQL Gateway ampia",
+        "kind": "field_max_threshold",
+        "event": "query_out",
+        "field": "rowCount",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 500,
+        "severity": "warn",
+        "message": "Almeno una query llm-sql-db-mcp ha restituito >= 500 righe."
+      }
     ]
   }
 }

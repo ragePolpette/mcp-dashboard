@@ -176,6 +176,34 @@ def test_db_mcp_parser_uses_embedded_timestamp_for_query_events():
     assert parsed.fields["tool"] == "db_prod_read_anonymized"
 
 
+def test_db_mcp_parser_accepts_sql_gateway_logger():
+    service = ServiceDefinition(
+        service_id="svc-sql-gateway",
+        name="Service SQL Gateway",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stdout")],
+        parser_chain=["json", "python", "uvicorn_access", "node_deprecation", "db_mcp_event"],
+    )
+    source = service.log_sources[0]
+    line = (
+        '[DB_SQL_MCP] 2026-03-20T10:05:56.147Z query_out '
+        '{"tool":"db_read","target_id":"prod-main","rowCount":12,"response":{"success":true,"rowCount":12}}'
+    )
+    pipeline = LogPipeline(LogRuleEngine(ROOT / "backend" / "config" / "log_rules.json"))
+
+    parsed = pipeline.parse_line(
+        service=service,
+        source=source,
+        line=line,
+        fallback_timestamp="2026-03-20T11:00:00+01:00",
+    )
+
+    assert parsed.timestamp == "2026-03-20T10:05:56.147Z"
+    assert parsed.logger == "DB_SQL_MCP"
+    assert parsed.event == "query_out"
+    assert parsed.fields["target_id"] == "prod-main"
+    assert parsed.fields["rowCount"] == 12
+
+
 def test_mcp_activity_endpoint_builds_read_write_rows(monkeypatch):
     service = ServiceDefinition(
         service_id="llm-memory",
