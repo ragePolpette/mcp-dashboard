@@ -6,6 +6,12 @@ const refreshAllBtn = document.getElementById("refreshAllBtn");
 const advancedPanel = document.getElementById("advancedPanel");
 const advancedTitle = document.getElementById("advancedTitle");
 const advancedMeta = document.getElementById("advancedMeta");
+const tabOptionsBtn = document.getElementById("tabOptionsBtn");
+const tabLogsBtn = document.getElementById("tabLogsBtn");
+const tabInspectorBtn = document.getElementById("tabInspectorBtn");
+const advancedOptionsView = document.getElementById("advancedOptionsView");
+const advancedLogsView = document.getElementById("advancedLogsView");
+const advancedInspectorView = document.getElementById("advancedInspectorView");
 const tailInput = document.getElementById("tailInput");
 const filterLevel = document.getElementById("filterLevel");
 const filterEvent = document.getElementById("filterEvent");
@@ -37,6 +43,7 @@ const saveOptionsBtn = document.getElementById("saveOptionsBtn");
 let services = [];
 let advancedServiceId = null;
 let advancedEventSource = null;
+let advancedActiveTab = "options";
 let dashboardStatus = { pid: null };
 const stateByService = new Map();
 const statusByService = new Map();
@@ -103,6 +110,10 @@ function supportsAlerts(serviceOrId) {
 
 function supportsRuntimeOptions(serviceOrId) {
   return hasCapability(serviceOrId, "runtime_options");
+}
+
+function supportsInspector(serviceOrId) {
+  return supportsQueryInspector(serviceOrId) || supportsActivity(serviceOrId) || supportsAlerts(serviceOrId);
 }
 
 function getServiceState(serviceId) {
@@ -357,6 +368,45 @@ function serviceOrderWeight(service) {
     custom: 40
   };
   return groupWeight[group] ?? 99;
+}
+
+function pickDefaultAdvancedTab(service, runtime) {
+  if (!runtime?.running) {
+    return "options";
+  }
+  return "logs";
+}
+
+function setAdvancedTab(tabName) {
+  advancedActiveTab = tabName;
+  const tabs = [
+    { name: "options", button: tabOptionsBtn, view: advancedOptionsView, enabled: true },
+    { name: "logs", button: tabLogsBtn, view: advancedLogsView, enabled: true },
+    {
+      name: "inspector",
+      button: tabInspectorBtn,
+      view: advancedInspectorView,
+      enabled: supportsInspector(advancedServiceId)
+    }
+  ];
+
+  for (const tab of tabs) {
+    if (!tab.button || !tab.view) {
+      continue;
+    }
+    if (!tab.enabled) {
+      tab.button.classList.add("hidden");
+      tab.view.classList.add("hidden");
+      tab.button.setAttribute("aria-selected", "false");
+      tab.button.classList.remove("active");
+      continue;
+    }
+    tab.button.classList.remove("hidden");
+    const active = tab.name === tabName;
+    tab.button.classList.toggle("active", active);
+    tab.button.setAttribute("aria-selected", active ? "true" : "false");
+    tab.view.classList.toggle("hidden", !active);
+  }
 }
 
 function toDisplayText(value) {
@@ -1012,6 +1062,7 @@ function renderCards() {
     head.className = "widget-head";
     const alertPayload = getServiceAlerts(service.id);
     const alertStatus = String(alertPayload.status || "ok").toLowerCase();
+    const hasVisibleAlert = supportsAlerts(service) && Number(alertPayload.triggered_count || 0) > 0;
     head.innerHTML = `
       <div>
         <div class="widget-eyebrow">${serviceGroupLabel(service)}</div>
@@ -1019,7 +1070,7 @@ function renderCards() {
       </div>
       <div class="status">
         <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
-        ${supportsAlerts(service) ? `<span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)}</span>` : ""}
+        ${hasVisibleAlert ? `<span class="alert-chip ${alertClass(alertStatus)}">${alertLabel(alertStatus)} ${alertPayload.triggered_count || 0}</span>` : ""}
       </div>
     `;
 
@@ -1033,17 +1084,30 @@ function renderCards() {
     lineOne.textContent = `${endpoint} | ${pidLabel}`;
     const lineTwo = document.createElement("div");
     lineTwo.textContent = `Health: ${healthLabel(runtime)} | Opzioni: ${optsCount}`;
-    const lineThree = document.createElement("div");
-    lineThree.className = "widget-event-line";
-    lineThree.textContent = lastEvent;
     meta.appendChild(lineOne);
     meta.appendChild(lineTwo);
-    meta.appendChild(lineThree);
 
     const metrics = getServiceMetrics(service.id);
     const kpi = document.createElement("div");
     kpi.className = "widget-kpi";
     kpi.textContent = serviceSummaryLine(service, metrics, runtime);
+
+    const trend = document.createElement("div");
+    trend.className = "widget-trend";
+    let trendData = metrics.activity_series || [];
+    let trendColor = "#73c2ff";
+    if (serviceKind(service) === "db") {
+      trendData = metrics.db_row_count_series || [];
+      trendColor = "#f2b84b";
+    } else if (serviceKind(service) === "rag") {
+      trendData = metrics.context_retrieval_series || [];
+      trendColor = "#7fdc8d";
+    }
+    trend.innerHTML = sparklineSvg(trendData, trendColor);
+
+    const lastLog = document.createElement("div");
+    lastLog.className = "widget-last-log";
+    lastLog.textContent = lastEvent;
 
     const controls = document.createElement("div");
     controls.className = "widget-actions";
@@ -1097,6 +1161,8 @@ function renderCards() {
     card.appendChild(head);
     card.appendChild(meta);
     card.appendChild(kpi);
+    card.appendChild(trend);
+    card.appendChild(lastLog);
     card.appendChild(controls);
     widgetGrid.appendChild(card);
   }
@@ -1106,12 +1172,15 @@ function renderOptionsForm(serviceId) {
   const options = optionsByService.get(serviceId) || [];
   optionsForm.innerHTML = "";
 
+  optionsPanel.classList.remove("hidden");
+
   if (!options.length) {
-    optionsPanel.classList.add("hidden");
+    const empty = document.createElement("div");
+    empty.className = "option-empty muted";
+    empty.textContent = "Nessuna opzione configurabile per questo servizio.";
+    optionsForm.appendChild(empty);
     return;
   }
-
-  optionsPanel.classList.remove("hidden");
 
   for (const opt of options) {
     const row = document.createElement("div");
@@ -1446,6 +1515,7 @@ async function openAdvanced(serviceId) {
   renderAdvancedMeta(service);
   renderOptionsForm(serviceId);
   advancedPanel.classList.remove("hidden");
+  setAdvancedTab(pickDefaultAdvancedTab(service, getRuntimeStatus(serviceId)));
 
   filterLevel.value = advancedFilters.level || "";
   filterChannel.value = advancedFilters.channel || "";
@@ -1490,6 +1560,9 @@ async function openAdvanced(serviceId) {
     renderAlertsForAdvanced(serviceId);
   } else {
     alertPanel.classList.add("hidden");
+  }
+  if (!supportsInspector(service) && advancedActiveTab === "inspector") {
+    setAdvancedTab("logs");
   }
   renderCards();
 }
@@ -1586,6 +1659,13 @@ function startAdvancedStream() {
 loadBtn.addEventListener("click", reloadAdvanced);
 streamBtn.addEventListener("click", startAdvancedStream);
 stopBtn.addEventListener("click", stopAdvancedStream);
+tabOptionsBtn.addEventListener("click", () => setAdvancedTab("options"));
+tabLogsBtn.addEventListener("click", () => setAdvancedTab("logs"));
+tabInspectorBtn.addEventListener("click", () => {
+  if (supportsInspector(advancedServiceId)) {
+    setAdvancedTab("inspector");
+  }
+});
 applyFilterBtn.addEventListener("click", async () => {
   syncAdvancedFiltersFromInputs();
   if (!advancedServiceId) {
