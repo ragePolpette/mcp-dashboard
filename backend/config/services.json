@@ -406,6 +406,16 @@
             "default": ""
           },
           {
+            "id": "target_dev_main_write_enabled",
+            "label": "DEV Main Write Enabled",
+            "type": "boolean",
+            "env_var": "TARGET_DEV_MAIN_WRITE_ENABLED",
+            "description": "Abilita o blocca il tool db_write sul target dev-main.",
+            "secret": false,
+            "required": false,
+            "default": true
+          },
+          {
             "id": "target_dev_main_anonymization_enabled",
             "label": "DEV Main Anonymization",
             "type": "boolean",
@@ -456,6 +466,16 @@
             "secret": true,
             "required": false,
             "default": ""
+          },
+          {
+            "id": "target_prod_main_write_enabled",
+            "label": "PROD Main Write Enabled",
+            "type": "boolean",
+            "env_var": "TARGET_PROD_MAIN_WRITE_ENABLED",
+            "description": "Abilita o blocca il tool db_write sul target prod-main.",
+            "secret": false,
+            "required": false,
+            "default": false
           },
           {
             "id": "target_prod_main_anonymization_enabled",
