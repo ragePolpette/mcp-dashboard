@@ -50,6 +50,7 @@ body {
 .topbar p {
   margin: 4px 0 0;
   color: var(--muted);
+  font-weight: 600;
 }
 
 .topbar-actions {
@@ -95,6 +96,15 @@ button:disabled {
 
 .btn-warn:hover {
   border-color: var(--warn);
+}
+
+.btn-danger {
+  border-color: #8a2d3a;
+  background: linear-gradient(180deg, #3a1620 0%, #2b1118 100%);
+}
+
+.btn-danger:hover {
+  border-color: var(--error);
 }
 
 .widget-grid {
