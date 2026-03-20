@@ -55,6 +55,9 @@ class ServiceDefinition:
     service_id: str
     name: str
     log_sources: list[ServiceLogSource]
+    kind: str = "custom"
+    group: str = "custom"
+    capabilities: list[str] = field(default_factory=list)
     parser_chain: list[str] = field(default_factory=list)
     rule_sets: list[str] = field(default_factory=list)
     control: ServiceControlDefinition | None = None
