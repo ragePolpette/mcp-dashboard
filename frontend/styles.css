@@ -229,6 +229,31 @@ button:disabled {
   background: rgba(95, 33, 33, 0.45);
 }
 
+.mode-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 58px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mode-read {
+  color: #9de0c1;
+  border: 1px solid #2d7a59;
+  background: rgba(24, 65, 47, 0.45);
+}
+
+.mode-write {
+  color: #ffd9a6;
+  border: 1px solid #9b5c2a;
+  background: rgba(91, 56, 22, 0.45);
+}
+
 .widget-list {
   margin: 0;
   padding: 0;
