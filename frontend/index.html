@@ -27,6 +27,36 @@
           <h2 id="advancedTitle">Dettaglio servizio</h2>
           <p id="advancedMeta" class="muted"></p>
         </div>
+      </div>
+
+      <div class="advanced-tabs" role="tablist" aria-label="Sezioni dettaglio servizio">
+        <button id="tabOptionsBtn" class="advanced-tab active" type="button" role="tab" aria-selected="true">Opzioni</button>
+        <button id="tabLogsBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Log</button>
+        <button id="tabInspectorBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Inspector</button>
+      </div>
+
+      <section id="advancedOptionsView" class="advanced-view">
+        <section id="optionsPanel" class="options-panel hidden">
+          <div class="options-header">
+            <h3>Opzioni pre-avvio</h3>
+            <button id="saveOptionsBtn" class="btn-ok">Salva Opzioni</button>
+          </div>
+          <p class="muted">Le opzioni vengono applicate al prossimo Start/Restart del servizio.</p>
+          <p class="muted">Le secret restano solo nella memoria della dashboard corrente: puoi fare Restart senza reinserirle finche' la dashboard resta attiva, ma non vengono mai salvate su disco.</p>
+          <div id="optionsForm" class="options-form"></div>
+        </section>
+      </section>
+
+      <section id="advancedLogsView" class="advanced-view hidden">
+        <section id="alertPanel" class="alert-panel hidden">
+          <div class="alert-panel-header">
+            <h3>Alert attivi</h3>
+            <button id="reloadAlertsBtn">Ricalcola Alert</button>
+          </div>
+          <div id="alertSummary" class="muted"></div>
+          <ul id="alertList" class="alert-list"></ul>
+        </section>
+
         <div class="advanced-actions">
           <label for="tailInput">Tail</label>
           <input id="tailInput" type="number" value="200" min="20" max="5000">
@@ -61,83 +91,66 @@
           <button id="streamBtn">Start Stream</button>
           <button id="stopBtn">Stop Stream</button>
         </div>
-      </div>
 
-      <section id="optionsPanel" class="options-panel hidden">
-        <div class="options-header">
-          <h3>Opzioni pre-avvio</h3>
-          <button id="saveOptionsBtn" class="btn-ok">Salva Opzioni</button>
-        </div>
-        <p class="muted">Le opzioni vengono applicate al prossimo Start/Restart del servizio.</p>
-        <p class="muted">Le secret restano solo nella memoria della dashboard corrente: puoi fare Restart senza reinserirle finche' la dashboard resta attiva, ma non vengono mai salvate su disco.</p>
-        <div id="optionsForm" class="options-form"></div>
-      </section>
-
-      <section id="alertPanel" class="alert-panel hidden">
-        <div class="alert-panel-header">
-          <h3>Alert attivi</h3>
-          <button id="reloadAlertsBtn">Ricalcola Alert</button>
-        </div>
-        <div id="alertSummary" class="muted"></div>
-        <ul id="alertList" class="alert-list"></ul>
-      </section>
-
-      <section id="queryPanel" class="query-panel hidden">
-        <div class="query-panel-header">
-          <h3>Query Inspector (DB)</h3>
-          <button id="reloadQueriesBtn">Ricarica Query</button>
-        </div>
-        <div class="query-pane">
+        <div class="log-pane">
           <table>
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Tool</th>
-                <th>Rows</th>
-                <th>Query</th>
+                <th>Level</th>
+                <th>Event</th>
+                <th>Channel</th>
+                <th>Message</th>
+                <th>Meta</th>
               </tr>
             </thead>
-            <tbody id="queryBody"></tbody>
+            <tbody id="logBody"></tbody>
           </table>
         </div>
       </section>
 
-      <section id="activityPanel" class="query-panel hidden">
-        <div class="query-panel-header">
-          <h3>Activity</h3>
-          <button id="reloadActivityBtn">Ricarica Activity</button>
-        </div>
-        <div class="query-pane">
-          <table>
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Tool</th>
-                <th>Mode</th>
-                <th>Request</th>
-                <th>Response</th>
-              </tr>
-            </thead>
-            <tbody id="activityBody"></tbody>
-          </table>
-        </div>
-      </section>
+      <section id="advancedInspectorView" class="advanced-view hidden">
+        <section id="queryPanel" class="query-panel hidden">
+          <div class="query-panel-header">
+            <h3>Query Inspector (DB)</h3>
+            <button id="reloadQueriesBtn">Ricarica Query</button>
+          </div>
+          <div class="query-pane">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Tool</th>
+                  <th>Rows</th>
+                  <th>Query</th>
+                </tr>
+              </thead>
+              <tbody id="queryBody"></tbody>
+            </table>
+          </div>
+        </section>
 
-      <div class="log-pane">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Level</th>
-              <th>Event</th>
-              <th>Channel</th>
-              <th>Message</th>
-              <th>Meta</th>
-            </tr>
-          </thead>
-          <tbody id="logBody"></tbody>
-        </table>
-      </div>
+        <section id="activityPanel" class="query-panel hidden">
+          <div class="query-panel-header">
+            <h3>Activity</h3>
+            <button id="reloadActivityBtn">Ricarica Activity</button>
+          </div>
+          <div class="query-pane">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Tool</th>
+                  <th>Mode</th>
+                  <th>Request</th>
+                  <th>Response</th>
+                </tr>
+              </thead>
+              <tbody id="activityBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
     </section>
   </main>
 
