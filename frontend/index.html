@@ -152,6 +152,31 @@
         </section>
       </section>
     </section>
+
+    <button id="settingsFab" class="settings-fab" type="button" aria-label="Impostazioni dashboard">⚙</button>
+
+    <section id="settingsPanel" class="settings-panel hidden" aria-live="polite">
+      <div class="settings-header">
+        <div>
+          <h2>Impostazioni</h2>
+          <p class="muted">Preferenze dashboard e visibilita' servizi.</p>
+        </div>
+        <div class="settings-actions">
+          <button id="saveSettingsBtn" class="btn-ok">Salva Impostazioni</button>
+          <button id="closeSettingsBtn">Chiudi</button>
+        </div>
+      </div>
+
+      <section class="settings-section">
+        <h3>Servizi visibili</h3>
+        <div id="settingsServicesList" class="settings-services-list"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Dashboard</h3>
+        <div id="settingsPreferencesForm" class="settings-form"></div>
+      </section>
+    </section>
   </main>
 
   <script src="/assets/app.js"></script>

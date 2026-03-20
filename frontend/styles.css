@@ -32,6 +32,7 @@ body {
   max-width: 1400px;
   margin: 0 auto;
   padding: 16px;
+  position: relative;
 }
 
 .topbar {
@@ -341,6 +342,99 @@ button:disabled {
   border-radius: 14px;
   background: var(--panel);
   padding: 12px;
+}
+
+.settings-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 1.35rem;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35);
+  z-index: 40;
+}
+
+.settings-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #17273b 0%, #122131 100%);
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  z-index: 35;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-header h2,
+.settings-section h3 {
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-section {
+  margin-top: 14px;
+  border: 1px solid #26425f;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.28);
+  padding: 10px;
+}
+
+.settings-services-list,
+.settings-form {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #254261;
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(8, 17, 28, 0.25);
+}
+
+.settings-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.settings-row-title {
+  font-weight: 700;
+}
+
+.settings-row-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
 }
 
 .hidden {

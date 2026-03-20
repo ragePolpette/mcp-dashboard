@@ -2,6 +2,12 @@ const widgetGrid = document.getElementById("widgetGrid");
 const dashboardPidText = document.getElementById("dashboardPidText");
 const killAllBtn = document.getElementById("killAllBtn");
 const refreshAllBtn = document.getElementById("refreshAllBtn");
+const settingsFab = document.getElementById("settingsFab");
+const settingsPanel = document.getElementById("settingsPanel");
+const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const settingsServicesList = document.getElementById("settingsServicesList");
+const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
 
 const advancedPanel = document.getElementById("advancedPanel");
 const advancedTitle = document.getElementById("advancedTitle");
@@ -45,6 +51,19 @@ let advancedServiceId = null;
 let advancedEventSource = null;
 let advancedActiveTab = "options";
 let dashboardStatus = { pid: null };
+let dashboardSettings = {
+  preferences: {
+    refresh_interval_sec: 5,
+    show_stopped_services: true,
+    default_advanced_tab: "automatic",
+    service_order: "manual",
+    show_alerts_in_home: true,
+    log_retention_days: 15,
+    recent_rows_limit: 30
+  },
+  service_visibility: {}
+};
+let refreshTimer = null;
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
@@ -370,7 +389,82 @@ function serviceOrderWeight(service) {
   return groupWeight[group] ?? 99;
 }
 
+function preferenceValue(key, fallback = null) {
+  if (!dashboardSettings || !dashboardSettings.preferences) {
+    return fallback;
+  }
+  return dashboardSettings.preferences[key] ?? fallback;
+}
+
+function isServiceVisible(service) {
+  if (!service) {
+    return false;
+  }
+  const visibilityMap = dashboardSettings?.service_visibility || {};
+  if (Object.prototype.hasOwnProperty.call(visibilityMap, service.id)) {
+    return Boolean(visibilityMap[service.id]);
+  }
+  return service.visible !== false;
+}
+
+function shouldRenderServiceCard(service) {
+  if (!isServiceVisible(service)) {
+    return false;
+  }
+  if (preferenceValue("show_stopped_services", true)) {
+    return true;
+  }
+  const runtime = getRuntimeStatus(service.id);
+  return Boolean(runtime.running);
+}
+
+function currentRecentRowsLimit() {
+  return Number(preferenceValue("recent_rows_limit", 30) || 30);
+}
+
+function currentRefreshIntervalMs() {
+  return Number(preferenceValue("refresh_interval_sec", 5) || 5) * 1000;
+}
+
+function compareServices(left, right) {
+  const orderMode = String(preferenceValue("service_order", "manual") || "manual");
+
+  if (orderMode === "status") {
+    const stateWeight = service => {
+      const runtime = getRuntimeStatus(service.id);
+      const uiState = getServiceState(service.id);
+      const state = effectiveRuntimeState(runtime, uiState);
+      const weights = { running: 10, unhealthy: 20, starting: 30, restarting: 40, stopped: 50, stopping: 60, unmanaged: 70 };
+      return weights[state] ?? 99;
+    };
+    const weightDiff = stateWeight(left) - stateWeight(right);
+    if (weightDiff !== 0) {
+      return weightDiff;
+    }
+  }
+
+  if (orderMode === "group" || orderMode === "status") {
+    const groupDiff = serviceOrderWeight(left) - serviceOrderWeight(right);
+    if (groupDiff !== 0) {
+      return groupDiff;
+    }
+    return String(left.name || left.id).localeCompare(String(right.name || right.id));
+  }
+
+  return Number(left.registryIndex || 0) - Number(right.registryIndex || 0);
+}
+
 function pickDefaultAdvancedTab(service, runtime) {
+  const preference = String(preferenceValue("default_advanced_tab", "automatic") || "automatic");
+  if (preference !== "automatic") {
+    if (preference === "inspector" && !supportsInspector(service)) {
+      return runtime?.running ? "logs" : "options";
+    }
+    if (preference === "logs" && !runtime?.running) {
+      return "options";
+    }
+    return preference;
+  }
   if (!runtime?.running) {
     return "options";
   }
@@ -1027,6 +1121,266 @@ async function loadDashboardStatus() {
   dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"}`;
 }
 
+async function loadDashboardSettings() {
+  const payload = await apiJson("/api/settings");
+  dashboardSettings = {
+    preferences: { ...dashboardSettings.preferences, ...(payload.preferences || {}) },
+    service_visibility: { ...(payload.service_visibility || {}) }
+  };
+  services = services.map(service => ({
+    ...service,
+    visible: dashboardSettings.service_visibility[service.id] ?? service.visible ?? true
+  }));
+  tailInput.value = String(currentRecentRowsLimit());
+}
+
+function renderSettingsPanel() {
+  settingsServicesList.innerHTML = "";
+  settingsPreferencesForm.innerHTML = "";
+
+  const sortedServices = [...services].sort((left, right) =>
+    String(left.name || left.id).localeCompare(String(right.name || right.id))
+  );
+  for (const service of sortedServices) {
+    const row = document.createElement("div");
+    row.className = "settings-row";
+    row.innerHTML = `
+      <div class="settings-row-head">
+        <div>
+          <div class="settings-row-title">${service.name}</div>
+          <div class="settings-row-meta">${serviceGroupLabel(service)} | ${service.control?.port ? `Port ${service.control.port}` : "Port n/d"}</div>
+        </div>
+      </div>
+    `;
+
+    const toggle = document.createElement("label");
+    toggle.className = "settings-toggle";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.serviceVisibility = service.id;
+    input.checked = isServiceVisible(service);
+    const text = document.createElement("span");
+    text.textContent = "Visibile in dashboard";
+    toggle.appendChild(input);
+    toggle.appendChild(text);
+    row.appendChild(toggle);
+    settingsServicesList.appendChild(row);
+  }
+
+  const preferenceDefinitions = [
+    {
+      id: "refresh_interval_sec",
+      label: "Intervallo refresh",
+      type: "select",
+      options: [
+        { value: "0", label: "Manuale" },
+        { value: "5", label: "5s" },
+        { value: "10", label: "10s" },
+        { value: "30", label: "30s" }
+      ],
+      hint: "Aggiornamento automatico della dashboard."
+    },
+    {
+      id: "show_stopped_services",
+      label: "Mostra servizi spenti",
+      type: "boolean",
+      hint: "Se OFF, in home restano visibili solo i servizi attivi."
+    },
+    {
+      id: "default_advanced_tab",
+      label: "Tab iniziale pannello avanzato",
+      type: "select",
+      options: [
+        { value: "automatic", label: "Automatico" },
+        { value: "options", label: "Opzioni" },
+        { value: "logs", label: "Log" },
+        { value: "inspector", label: "Inspector" }
+      ],
+      hint: "Tab aperta di default quando entri nel pannello avanzato."
+    },
+    {
+      id: "service_order",
+      label: "Ordine servizi",
+      type: "select",
+      options: [
+        { value: "manual", label: "Manuale" },
+        { value: "group", label: "Per gruppo" },
+        { value: "status", label: "Per stato" }
+      ],
+      hint: "Ordine delle card in home."
+    },
+    {
+      id: "show_alerts_in_home",
+      label: "Mostra alert in home",
+      type: "boolean",
+      hint: "Mostra badge alert sulle card solo se attivo."
+    },
+    {
+      id: "log_retention_days",
+      label: "Retention log dashboard (giorni)",
+      type: "integer",
+      hint: "Pruning automatico dei log più vecchi."
+    },
+    {
+      id: "recent_rows_limit",
+      label: "Massimo righe recenti in UI",
+      type: "integer",
+      hint: "Numero di righe recenti caricate nella home e nello stream live."
+    }
+  ];
+
+  for (const definition of preferenceDefinitions) {
+    const row = document.createElement("div");
+    row.className = "settings-row";
+
+    const label = document.createElement("label");
+    label.className = "option-label";
+    label.htmlFor = `setting-${definition.id}`;
+    label.textContent = definition.label;
+    row.appendChild(label);
+
+    let input;
+    const current = preferenceValue(definition.id, null);
+    if (definition.type === "boolean") {
+      input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = Boolean(current);
+    } else if (definition.type === "integer") {
+      input = document.createElement("input");
+      input.type = "number";
+      input.value = String(current ?? "");
+      input.min = definition.id === "recent_rows_limit" ? "10" : "1";
+      input.max = definition.id === "log_retention_days" ? "365" : "500";
+    } else {
+      input = document.createElement("select");
+      for (const optionDef of definition.options) {
+        const option = document.createElement("option");
+        option.value = optionDef.value;
+        option.textContent = optionDef.label;
+        if (String(current ?? "") === optionDef.value) {
+          option.selected = true;
+        }
+        input.appendChild(option);
+      }
+    }
+    input.id = `setting-${definition.id}`;
+    input.dataset.preferenceId = definition.id;
+    input.dataset.preferenceType = definition.type;
+    row.appendChild(input);
+
+    const hint = document.createElement("div");
+    hint.className = "option-hint";
+    hint.textContent = definition.hint;
+    row.appendChild(hint);
+
+    settingsPreferencesForm.appendChild(row);
+  }
+}
+
+function collectDashboardSettingsPayload() {
+  const preferences = {};
+  const visibility = {};
+
+  for (const input of settingsPreferencesForm.querySelectorAll("[data-preference-id]")) {
+    const key = input.dataset.preferenceId;
+    const type = input.dataset.preferenceType;
+    if (!key || !type) {
+      continue;
+    }
+    if (type === "boolean") {
+      preferences[key] = Boolean(input.checked);
+    } else if (type === "integer") {
+      preferences[key] = Number(input.value);
+    } else {
+      preferences[key] = String(input.value || "");
+    }
+  }
+
+  for (const input of settingsServicesList.querySelectorAll("[data-service-visibility]")) {
+    visibility[input.dataset.serviceVisibility] = Boolean(input.checked);
+  }
+
+  return { preferences, service_visibility: visibility };
+}
+
+function applyDashboardSettingsPayload(payload) {
+  dashboardSettings = {
+    preferences: { ...dashboardSettings.preferences, ...(payload.preferences || {}) },
+    service_visibility: { ...(payload.service_visibility || {}) }
+  };
+  services = services
+    .map(service => ({
+      ...service,
+      visible: dashboardSettings.service_visibility[service.id] ?? true
+    }))
+    .sort(compareServices);
+  tailInput.value = String(currentRecentRowsLimit());
+  scheduleAutoRefresh();
+}
+
+async function saveDashboardSettings() {
+  saveSettingsBtn.disabled = true;
+  try {
+    const payload = collectDashboardSettingsPayload();
+    const result = await apiJson("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    applyDashboardSettingsPayload(result);
+    if (advancedServiceId && !isServiceVisible(services.find(service => service.id === advancedServiceId))) {
+      stopAdvancedStream();
+      advancedServiceId = null;
+      advancedPanel.classList.add("hidden");
+    }
+    await Promise.all([loadServices(), refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), refreshAllLogs(currentRecentRowsLimit())]);
+    renderSettingsPanel();
+    renderCards();
+  } catch (error) {
+    window.alert(`Errore salvataggio impostazioni: ${error.message}`);
+  } finally {
+    saveSettingsBtn.disabled = false;
+  }
+}
+
+function toggleSettingsPanel(forceOpen = null) {
+  const shouldOpen = forceOpen === null ? settingsPanel.classList.contains("hidden") : Boolean(forceOpen);
+  settingsPanel.classList.toggle("hidden", !shouldOpen);
+  if (shouldOpen) {
+    renderSettingsPanel();
+  }
+}
+
+function scheduleAutoRefresh() {
+  if (refreshTimer) {
+    window.clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  const interval = currentRefreshIntervalMs();
+  if (!interval) {
+    return;
+  }
+  refreshTimer = window.setInterval(() => {
+    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), loadDashboardStatus()]).then(() => {
+      services = [...services].sort(compareServices);
+      renderCards();
+      if (advancedServiceId) {
+        const service = services.find(s => s.id === advancedServiceId);
+        if (service && isServiceVisible(service)) {
+          renderAdvancedMeta(service);
+          if (supportsAlerts(service)) {
+            renderAlertsForAdvanced(service.id);
+          }
+        } else {
+          stopAdvancedStream();
+          advancedServiceId = null;
+          advancedPanel.classList.add("hidden");
+        }
+      }
+    });
+  }, interval);
+}
+
 async function killEmAll() {
   if (!window.confirm("Questo fermerà tutti gli MCP e la dashboard. Continuare?")) {
     return;
@@ -1048,8 +1402,14 @@ async function killEmAll() {
 
 function renderCards() {
   widgetGrid.innerHTML = "";
+  const visibleServices = [...services].sort(compareServices).filter(service => shouldRenderServiceCard(service));
 
-  for (const service of services) {
+  if (!visibleServices.length) {
+    widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Nessun servizio visibile</div><div class="widget-meta">Usa l'icona impostazioni per mostrare servizi o riattivare quelli nascosti.</div></article>`;
+    return;
+  }
+
+  for (const service of visibleServices) {
     const state = getServiceState(service.id);
     const runtime = getRuntimeStatus(service.id);
     const entries = state.entries || [];
@@ -1062,7 +1422,10 @@ function renderCards() {
     head.className = "widget-head";
     const alertPayload = getServiceAlerts(service.id);
     const alertStatus = String(alertPayload.status || "ok").toLowerCase();
-    const hasVisibleAlert = supportsAlerts(service) && Number(alertPayload.triggered_count || 0) > 0;
+    const hasVisibleAlert =
+      Boolean(preferenceValue("show_alerts_in_home", true)) &&
+      supportsAlerts(service) &&
+      Number(alertPayload.triggered_count || 0) > 0;
     head.innerHTML = `
       <div>
         <div class="widget-eyebrow">${serviceGroupLabel(service)}</div>
@@ -1117,7 +1480,7 @@ function renderCards() {
     reloadBtn.disabled = state.actionBusy;
     reloadBtn.addEventListener("click", async () => {
       await Promise.all([
-        loadServiceTail(service.id, 30),
+        loadServiceTail(service.id, currentRecentRowsLimit()),
         refreshServiceStatus(service.id),
         refreshServiceMetrics(service.id),
         refreshServiceAlerts(service.id)
@@ -1284,14 +1647,11 @@ function collectOptionsFromForm() {
 
 async function loadServices() {
   services = (await apiJson("/api/services"))
-    .map(normalizeServiceDefinition)
-    .sort((left, right) => {
-      const weightDiff = serviceOrderWeight(left) - serviceOrderWeight(right);
-      if (weightDiff !== 0) {
-        return weightDiff;
-      }
-      return String(left.name || left.id).localeCompare(String(right.name || right.id));
-    });
+    .map((service, index) => ({
+      ...normalizeServiceDefinition(service),
+      registryIndex: index
+    }))
+    .sort(compareServices);
   for (const service of services) {
     getServiceState(service.id);
     const runtime = getRuntimeStatus(service.id);
@@ -1303,7 +1663,7 @@ async function loadServices() {
   }
 }
 
-async function loadServiceTail(serviceId, tail = 30) {
+async function loadServiceTail(serviceId, tail = currentRecentRowsLimit()) {
   const state = getServiceState(serviceId);
   state.loading = true;
   try {
@@ -1403,12 +1763,13 @@ async function refreshAllAlerts() {
   await Promise.all(services.map(service => refreshServiceAlerts(service.id)));
 }
 
-async function refreshAllLogs(tail = 30) {
+async function refreshAllLogs(tail = currentRecentRowsLimit()) {
   await Promise.all(services.map(service => loadServiceTail(service.id, tail)));
 }
 
-async function refreshAll(tail = 30) {
+async function refreshAll(tail = currentRecentRowsLimit()) {
   await Promise.all([refreshAllStatuses(), refreshAllLogs(tail), refreshAllMetrics(), refreshAllAlerts()]);
+  services = [...services].sort(compareServices);
   renderCards();
 }
 
@@ -1426,7 +1787,7 @@ async function controlAction(serviceId, action) {
     state.pendingAction = "";
     await Promise.all([
       refreshServiceStatus(serviceId),
-      loadServiceTail(serviceId, 60),
+      loadServiceTail(serviceId, currentRecentRowsLimit()),
       refreshServiceMetrics(serviceId),
       refreshServiceAlerts(serviceId)
     ]);
@@ -1623,8 +1984,8 @@ function startAdvancedStream() {
       const entry = JSON.parse(evt.data);
       const state = getServiceState(advancedServiceId);
       state.entries.unshift(entry);
-      if (state.entries.length > 500) {
-        state.entries = state.entries.slice(0, 500);
+      if (state.entries.length > currentRecentRowsLimit()) {
+        state.entries = state.entries.slice(0, currentRecentRowsLimit());
       }
       rebuildEventFilterOptions(state.entries || []);
       if (entryMatchesAdvancedFilters(entry)) {
@@ -1713,8 +2074,11 @@ clearLogsBtn.addEventListener("click", async () => {
   }
   await clearServiceLogs(advancedServiceId);
 });
-refreshAllBtn.addEventListener("click", () => refreshAll(30));
+refreshAllBtn.addEventListener("click", () => refreshAll(currentRecentRowsLimit()));
 killAllBtn.addEventListener("click", killEmAll);
+settingsFab.addEventListener("click", () => toggleSettingsPanel());
+closeSettingsBtn.addEventListener("click", () => toggleSettingsPanel(false));
+saveSettingsBtn.addEventListener("click", saveDashboardSettings);
 reloadAlertsBtn.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsAlerts(advancedServiceId)) {
     return;
@@ -1746,22 +2110,11 @@ saveOptionsBtn.addEventListener("click", async () => {
 
 async function boot() {
   await loadServices();
+  await loadDashboardSettings();
   await loadDashboardStatus();
-  await refreshAll(30);
-  setInterval(() => {
-    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), loadDashboardStatus()]).then(() => {
-      renderCards();
-      if (advancedServiceId) {
-        const service = services.find(s => s.id === advancedServiceId);
-        if (service) {
-          renderAdvancedMeta(service);
-          if (supportsAlerts(service)) {
-            renderAlertsForAdvanced(service.id);
-          }
-        }
-      }
-    });
-  }, 5000);
+  renderSettingsPanel();
+  await refreshAll(currentRecentRowsLimit());
+  scheduleAutoRefresh();
 }
 
 boot().catch(err => {
