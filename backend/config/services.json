@@ -8,7 +8,8 @@
         "python",
         "uvicorn_access",
         "node_deprecation",
-        "db_mcp_event"
+        "db_mcp_event",
+        "mcp_activity"
       ],
       "rule_sets": [
         "llm-context"
@@ -83,7 +84,8 @@
         "python",
         "uvicorn_access",
         "node_deprecation",
-        "db_mcp_event"
+        "db_mcp_event",
+        "mcp_activity"
       ],
       "rule_sets": [
         "llm-memory"
