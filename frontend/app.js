@@ -1,4 +1,6 @@
 const widgetGrid = document.getElementById("widgetGrid");
+const dashboardPidText = document.getElementById("dashboardPidText");
+const killAllBtn = document.getElementById("killAllBtn");
 const refreshAllBtn = document.getElementById("refreshAllBtn");
 
 const advancedPanel = document.getElementById("advancedPanel");
@@ -20,6 +22,9 @@ const logBody = document.getElementById("logBody");
 const queryPanel = document.getElementById("queryPanel");
 const queryBody = document.getElementById("queryBody");
 const reloadQueriesBtn = document.getElementById("reloadQueriesBtn");
+const activityPanel = document.getElementById("activityPanel");
+const activityBody = document.getElementById("activityBody");
+const reloadActivityBtn = document.getElementById("reloadActivityBtn");
 const alertPanel = document.getElementById("alertPanel");
 const alertSummary = document.getElementById("alertSummary");
 const alertList = document.getElementById("alertList");
@@ -32,11 +37,13 @@ const saveOptionsBtn = document.getElementById("saveOptionsBtn");
 let services = [];
 let advancedServiceId = null;
 let advancedEventSource = null;
+let dashboardStatus = { pid: null };
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
 const metricsByService = new Map();
 const queriesByService = new Map();
+const activityByService = new Map();
 const alertsByService = new Map();
 const advancedFilters = { level: "", event: "", channel: "", source: "", text: "" };
 
@@ -100,6 +107,10 @@ function getServiceAlerts(serviceId) {
 
 function isDbService(serviceId) {
   return String(serviceId || "").startsWith("llm-db-");
+}
+
+function isActivityService(serviceId) {
+  return serviceId === "llm-context" || serviceId === "llm-memory";
 }
 
 function effectiveRuntimeState(runtime, uiState = null) {
@@ -442,6 +453,12 @@ function clearQueryRows() {
   }
 }
 
+function clearActivityRows() {
+  while (activityBody.firstChild) {
+    activityBody.removeChild(activityBody.firstChild);
+  }
+}
+
 function queryMatchesAdvancedFilters(query) {
   if (advancedFilters.level) {
     const level = String(query?.level || "").toUpperCase();
@@ -609,6 +626,47 @@ function renderQueriesForAdvanced(serviceId) {
     frag.appendChild(tr);
   }
   queryBody.appendChild(frag);
+}
+
+function renderActivityForAdvanced(serviceId) {
+  const rows = activityByService.get(serviceId) || [];
+  clearActivityRows();
+
+  const frag = document.createDocumentFragment();
+  for (const item of rows.slice(0, 200)) {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.textContent = formatTimestamp(item.timestamp);
+    applyTooltip(timeTd, item.timestamp || "Timestamp non disponibile");
+
+    const toolTd = document.createElement("td");
+    toolTd.textContent = item.tool || "n/d";
+
+    const modeTd = document.createElement("td");
+    const chip = document.createElement("span");
+    const kind = String(item.kind || "read").toLowerCase();
+    chip.className = `mode-chip ${kind === "write" ? "mode-write" : "mode-read"}`;
+    chip.textContent = kind;
+    modeTd.appendChild(chip);
+
+    const requestTd = document.createElement("td");
+    const requestPre = document.createElement("pre");
+    requestPre.className = "message-preview";
+    requestPre.textContent = item.request_text || "";
+    requestTd.appendChild(requestPre);
+
+    const responseTd = document.createElement("td");
+    const responsePre = document.createElement("pre");
+    responsePre.className = "message-preview";
+    responsePre.textContent = item.response_text || "";
+    responseTd.appendChild(responsePre);
+
+    tr.append(timeTd, toolTd, modeTd, requestTd, responseTd);
+    frag.appendChild(tr);
+  }
+
+  activityBody.appendChild(frag);
 }
 
 function clearAlertList() {
@@ -812,6 +870,31 @@ async function apiJson(url, options = undefined) {
     throw new Error(detail);
   }
   return payload;
+}
+
+async function loadDashboardStatus() {
+  const payload = await apiJson("/api/dashboard/status");
+  dashboardStatus = payload || { pid: null };
+  dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"}`;
+}
+
+async function killEmAll() {
+  if (!window.confirm("Questo fermerà tutti gli MCP e la dashboard. Continuare?")) {
+    return;
+  }
+  killAllBtn.disabled = true;
+  refreshAllBtn.disabled = true;
+  stopAdvancedStream();
+  try {
+    await apiJson("/api/control/kill-all", { method: "POST" });
+    dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"} | arresto in corso`;
+    widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Shutdown</div><div class="widget-meta">Kill 'em All eseguito. La dashboard si sta arrestando.</div></article>`;
+    advancedPanel.classList.add("hidden");
+  } catch (error) {
+    killAllBtn.disabled = false;
+    refreshAllBtn.disabled = false;
+    window.alert(`Kill 'em All fallito: ${error.message}`);
+  }
 }
 
 function renderCards() {
@@ -1213,6 +1296,20 @@ async function controlAction(serviceId, action) {
   }
 }
 
+async function loadServiceActivity(serviceId, tail = 2000) {
+  if (!isActivityService(serviceId)) {
+    activityByService.set(serviceId, []);
+    return;
+  }
+  try {
+    const textParam = advancedFilters.text ? `&text=${encodeURIComponent(advancedFilters.text)}` : "";
+    const payload = await apiJson(`/api/services/${serviceId}/activity?tail=${tail}${textParam}`);
+    activityByService.set(serviceId, payload.activity || []);
+  } catch {
+    activityByService.set(serviceId, activityByService.get(serviceId) || []);
+  }
+}
+
 async function clearServiceLogs(serviceId) {
   await apiJson(`/api/services/${serviceId}/logs/clear`, { method: "POST" });
   const state = getServiceState(serviceId);
@@ -1286,7 +1383,8 @@ async function openAdvanced(serviceId) {
   const tail = Number(tailInput.value || 200);
   await Promise.all([
     loadServiceTail(serviceId, tail),
-    loadServiceQueries(serviceId, Math.max(tail * 8, 500))
+    loadServiceQueries(serviceId, Math.max(tail * 8, 500)),
+    loadServiceActivity(serviceId, Math.max(tail * 8, 500))
   ]);
 
   const state = getServiceState(serviceId);
@@ -1304,6 +1402,13 @@ async function openAdvanced(serviceId) {
     queryPanel.classList.add("hidden");
     clearQueryRows();
   }
+  if (isActivityService(serviceId)) {
+    activityPanel.classList.remove("hidden");
+    renderActivityForAdvanced(serviceId);
+  } else {
+    activityPanel.classList.add("hidden");
+    clearActivityRows();
+  }
   alertPanel.classList.remove("hidden");
   renderAlertsForAdvanced(serviceId);
   renderCards();
@@ -1320,7 +1425,8 @@ async function reloadAdvanced() {
     refreshServiceStatus(advancedServiceId),
     refreshServiceMetrics(advancedServiceId),
     refreshServiceAlerts(advancedServiceId),
-    loadServiceQueries(advancedServiceId, Math.max(tail * 8, 500))
+    loadServiceQueries(advancedServiceId, Math.max(tail * 8, 500)),
+    loadServiceActivity(advancedServiceId, Math.max(tail * 8, 500))
   ]);
 
   const service = services.find(s => s.id === advancedServiceId);
@@ -1338,6 +1444,9 @@ async function reloadAdvanced() {
   renderAdvancedEntriesForService(advancedServiceId);
   if (isDbService(advancedServiceId)) {
     renderQueriesForAdvanced(advancedServiceId);
+  }
+  if (isActivityService(advancedServiceId)) {
+    renderActivityForAdvanced(advancedServiceId);
   }
   renderAlertsForAdvanced(advancedServiceId);
   renderCards();
@@ -1368,6 +1477,9 @@ function startAdvancedStream() {
       }
       if (isDbService(advancedServiceId) && isDbQueryEvent(entry)) {
         loadServiceQueries(advancedServiceId, 2000).then(() => renderQueriesForAdvanced(advancedServiceId));
+      }
+      if (isActivityService(advancedServiceId)) {
+        loadServiceActivity(advancedServiceId, 2000).then(() => renderActivityForAdvanced(advancedServiceId));
       }
       Promise.all([
         refreshServiceMetrics(advancedServiceId),
@@ -1402,6 +1514,10 @@ applyFilterBtn.addEventListener("click", async () => {
     await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderQueriesForAdvanced(advancedServiceId);
   }
+  if (isActivityService(advancedServiceId)) {
+    await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
+    renderActivityForAdvanced(advancedServiceId);
+  }
 });
 clearFilterBtn.addEventListener("click", async () => {
   advancedFilters.level = "";
@@ -1424,6 +1540,10 @@ clearFilterBtn.addEventListener("click", async () => {
     await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
     renderQueriesForAdvanced(advancedServiceId);
   }
+  if (isActivityService(advancedServiceId)) {
+    await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
+    renderActivityForAdvanced(advancedServiceId);
+  }
 });
 clearLogsBtn.addEventListener("click", async () => {
   if (!advancedServiceId) {
@@ -1432,6 +1552,7 @@ clearLogsBtn.addEventListener("click", async () => {
   await clearServiceLogs(advancedServiceId);
 });
 refreshAllBtn.addEventListener("click", () => refreshAll(30));
+killAllBtn.addEventListener("click", killEmAll);
 reloadAlertsBtn.addEventListener("click", async () => {
   if (!advancedServiceId) {
     return;
@@ -1447,6 +1568,13 @@ reloadQueriesBtn.addEventListener("click", async () => {
   await loadServiceQueries(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
   renderQueriesForAdvanced(advancedServiceId);
 });
+reloadActivityBtn.addEventListener("click", async () => {
+  if (!advancedServiceId || !isActivityService(advancedServiceId)) {
+    return;
+  }
+  await loadServiceActivity(advancedServiceId, Math.max(Number(tailInput.value || 200) * 8, 500));
+  renderActivityForAdvanced(advancedServiceId);
+});
 saveOptionsBtn.addEventListener("click", async () => {
   if (!advancedServiceId) {
     return;
@@ -1456,9 +1584,10 @@ saveOptionsBtn.addEventListener("click", async () => {
 
 async function boot() {
   await loadServices();
+  await loadDashboardStatus();
   await refreshAll(30);
   setInterval(() => {
-    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts()]).then(() => {
+    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), loadDashboardStatus()]).then(() => {
       renderCards();
       if (advancedServiceId) {
         const service = services.find(s => s.id === advancedServiceId);

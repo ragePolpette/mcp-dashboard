@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -187,6 +190,100 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _entries_newest_first(queries)
 
 
+def _preview_text(value: Any, max_chars: int = 220) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 1]}…"
+
+
+def _activity_kind(entry: dict[str, Any]) -> str:
+    event = str(entry.get("event") or "")
+    if event.startswith("write_"):
+        return "write"
+    return "read"
+
+
+def _activity_tool(fields: dict[str, Any]) -> str:
+    return str(fields.get("tool") or fields.get("operation") or "n/d")
+
+
+def _build_activity_request_text(fields: dict[str, Any]) -> str:
+    if fields.get("query_text"):
+        return _preview_text(fields.get("query_text"))
+    if fields.get("query"):
+        return _preview_text(fields.get("query"))
+    if fields.get("content"):
+        return _preview_text(fields.get("content"))
+    if fields.get("name"):
+        return _preview_text(fields.get("name"))
+    if fields.get("target_ids"):
+        return _preview_text(", ".join(str(item) for item in (fields.get("target_ids") or [])))
+    if fields.get("entry_ids"):
+        return _preview_text(", ".join(str(item) for item in (fields.get("entry_ids") or [])))
+    return ""
+
+
+def _build_activity_response_text(fields: dict[str, Any]) -> str:
+    if "success" in fields:
+        parts = [f"success={fields.get('success')}"]
+        if fields.get("rejected") is not None:
+            parts.append(f"rejected={fields.get('rejected')}")
+        if fields.get("reason"):
+            parts.append(f"reason={fields.get('reason')}")
+        if fields.get("entry_id"):
+            parts.append(f"entry_id={fields.get('entry_id')}")
+        if fields.get("count") is not None:
+            parts.append(f"count={fields.get('count')}")
+        return _preview_text(" | ".join(parts))
+    if fields.get("result_count") is not None:
+        return _preview_text(
+            f"result_count={fields.get('result_count')} | has_results={fields.get('has_results')}"
+        )
+    return ""
+
+
+def _build_activity_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pending_by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    activity: list[dict[str, Any]] = []
+
+    for entry in entries:
+        event = str(entry.get("event") or "")
+        if event not in {"query_in", "query_out", "write_in", "write_out"}:
+            continue
+
+        fields = entry.get("fields") or {}
+        tool = _activity_tool(fields)
+        key = (str(fields.get("agent_id") or "unknown"), tool)
+
+        if event.endswith("_in"):
+            pending_by_key.setdefault(key, []).append(
+                {
+                    "request_text": _build_activity_request_text(fields),
+                    "kind": _activity_kind(entry),
+                }
+            )
+            continue
+
+        pending_items = pending_by_key.get(key) or []
+        pending = pending_items.pop(0) if pending_items else {}
+        activity.append(
+            {
+                "timestamp": entry.get("timestamp"),
+                "tool": tool,
+                "kind": pending.get("kind") or _activity_kind(entry),
+                "request_text": pending.get("request_text") or "",
+                "response_text": _build_activity_response_text(fields),
+                "agent_id": fields.get("agent_id"),
+                "source_path": entry.get("source_path"),
+            }
+        )
+
+    return _entries_newest_first(activity)
+
+
 def _clear_service_logs(service) -> list[str]:
     seen: set[str] = set()
     cleared: list[str] = []
@@ -296,6 +393,16 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/dashboard/status")
+def dashboard_status() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "pid": os.getpid(),
+        "service_count": len(registry.list_services()),
+        "evaluated_at": datetime.now().astimezone().isoformat(),
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     html_path = FRONTEND_DIR / "index.html"
@@ -336,6 +443,45 @@ def list_services() -> list[dict[str, Any]]:
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     return process_manager.status(service)
+
+
+def _schedule_dashboard_shutdown(delay_seconds: float = 0.35) -> None:
+    def _shutdown() -> None:
+        time.sleep(delay_seconds)
+        os._exit(0)
+
+    threading.Thread(target=_shutdown, daemon=True).start()
+
+
+@app.post("/api/control/kill-all")
+def kill_all() -> dict[str, Any]:
+    stopped: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    for service in registry.list_services():
+        if service.control is None or service.service_id == "mcp-dashboard":
+            continue
+        try:
+            result = process_manager.stop(service)
+            stopped.append(
+                {
+                    "service_id": service.service_id,
+                    "ok": bool(result.get("ok")),
+                    "result": result.get("result"),
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive surface for control plane
+            failed.append({"service_id": service.service_id, "error": str(exc)})
+
+    _schedule_dashboard_shutdown()
+    return {
+        "ok": True,
+        "action": "kill-all",
+        "dashboard_pid": os.getpid(),
+        "stopped": stopped,
+        "failed": failed,
+        "scheduled_dashboard_shutdown": True,
+    }
 
 
 @app.get("/api/services/{service_id}/options")
@@ -432,6 +578,20 @@ def get_queries(
     if text:
         query_entries = _apply_log_filters(query_entries, text=text)
     return {"service_id": service_id, "count": len(query_entries), "queries": query_entries}
+
+
+@app.get("/api/services/{service_id}/activity")
+def get_activity(
+    service_id: str,
+    tail: int = Query(default=2000, ge=1, le=10000),
+    text: str | None = Query(default=None),
+) -> dict[str, Any]:
+    service = _service_or_404(service_id)
+    entries = pipeline.read_tail(service, tail=tail)
+    activity_entries = _build_activity_records(entries)
+    if text:
+        activity_entries = _apply_log_filters(activity_entries, text=text)
+    return {"service_id": service_id, "count": len(activity_entries), "activity": activity_entries}
 
 
 @app.get("/api/services/{service_id}/metrics")
