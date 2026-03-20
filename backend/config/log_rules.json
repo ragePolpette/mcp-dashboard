@@ -129,6 +129,55 @@
         ]
       }
     ],
+    "llm-bitbucket-mcp": [
+      {
+        "contains": "\"tool\":\"list_pull_requests\"",
+        "add_tags": ["bitbucket", "pr", "read"]
+      },
+      {
+        "contains": "\"tool\":\"get_pull_request\"",
+        "add_tags": ["bitbucket", "pr", "read"]
+      },
+      {
+        "contains": "\"tool\":\"add_pull_request_comment\"",
+        "add_tags": ["bitbucket", "pr", "write"]
+      },
+      {
+        "contains": "\"tool\":\"create_pull_request\"",
+        "add_tags": ["bitbucket", "pr", "write"]
+      },
+      {
+        "contains": "\"tool\":\"approve_pull_request\"",
+        "add_tags": ["bitbucket", "pr", "write"]
+      },
+      {
+        "contains": "\"tool\":\"merge_pull_request\"",
+        "add_tags": ["bitbucket", "pr", "write", "destructive"]
+      },
+      {
+        "contains": "\"tool\":\"bb_clone\"",
+        "add_tags": ["bitbucket", "clone"]
+      },
+      {
+        "contains": "\"tool\":\"bb_api\"",
+        "add_tags": ["bitbucket", "api", "generic"]
+      },
+      {
+        "regex": "\"status\":\\s*(?:401|403)",
+        "set": { "event": "bb.auth_error", "level": "ERROR" },
+        "add_tags": ["bitbucket", "security"]
+      },
+      {
+        "regex": "\"status\":\\s*429",
+        "set": { "event": "bb.rate_limited", "level": "WARN" },
+        "add_tags": ["bitbucket", "rate-limit"]
+      },
+      {
+        "contains": "Not Found: Invalid or expired session ID",
+        "set": { "event": "transport.invalid_session", "level": "WARN" },
+        "add_tags": ["mcp", "session"]
+      }
+    ],
     "llm-db-prod-mcp": [
       {
         "contains": "\"event\":\"db.query.executed\"",
