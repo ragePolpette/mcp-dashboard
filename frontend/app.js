@@ -113,7 +113,7 @@ function supportsRuntimeOptions(serviceOrId) {
 }
 
 function supportsInspector(serviceOrId) {
-  return supportsQueryInspector(serviceOrId) || supportsActivity(serviceOrId) || supportsAlerts(serviceOrId);
+  return supportsQueryInspector(serviceOrId) || supportsActivity(serviceOrId);
 }
 
 function getServiceState(serviceId) {
