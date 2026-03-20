@@ -356,6 +356,238 @@
       ]
     },
     {
+      "id": "llm-sql-db-mcp",
+      "name": "LLM SQL DB MCP",
+      "kind": "db",
+      "group": "database",
+      "capabilities": [
+        "logs",
+        "query_inspector",
+        "alerts",
+        "runtime_options",
+        "health_details"
+      ],
+      "parser_chain": [
+        "json",
+        "python",
+        "uvicorn_access",
+        "node_deprecation",
+        "db_mcp_event"
+      ],
+      "rule_sets": [
+        "llm-sql-db-mcp"
+      ],
+      "control": {
+        "workdir": "../../../llm-sql-db-mcp",
+        "start_command": [
+          "node",
+          "src/server.js"
+        ],
+        "host": "127.0.0.1",
+        "port": 8784,
+        "health_url": "http://127.0.0.1:8784/health",
+        "startup_timeout_sec": 12,
+        "pid_file": "../../runtime/pids/llm-sql-db-mcp.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-sql-db-mcp.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-sql-db-mcp.err.log",
+        "env": {
+          "HOST": "127.0.0.1",
+          "PORT": "8784"
+        },
+        "options": [
+          {
+            "id": "db_dev_main_connection_string",
+            "label": "DEV Main Connection String",
+            "type": "string",
+            "env_var": "DB_DEV_MAIN_CONNECTION_STRING",
+            "description": "Connection string SQL Server per il target dev-main.",
+            "secret": true,
+            "required": false,
+            "default": ""
+          },
+          {
+            "id": "target_dev_main_anonymization_enabled",
+            "label": "DEV Main Anonymization",
+            "type": "boolean",
+            "env_var": "TARGET_DEV_MAIN_ANONYMIZATION_ENABLED",
+            "description": "Abilita o disabilita anonimizzazione sul target dev-main.",
+            "secret": false,
+            "required": false,
+            "default": false
+          },
+          {
+            "id": "target_dev_main_anonymization_mode",
+            "label": "DEV Main Anonymization Mode",
+            "type": "select",
+            "env_var": "TARGET_DEV_MAIN_ANONYMIZATION_MODE",
+            "description": "Mode anonimizzazione per dev-main.",
+            "secret": false,
+            "required": false,
+            "default": "off",
+            "allowed_values": ["off", "deterministic", "hybrid", "llm-strict"]
+          },
+          {
+            "id": "target_dev_main_llm_provider",
+            "label": "DEV Main Provider",
+            "type": "select",
+            "env_var": "TARGET_DEV_MAIN_LLM_PROVIDER",
+            "description": "Provider LLM per dev-main.",
+            "secret": false,
+            "required": false,
+            "default": "none",
+            "allowed_values": ["none", "lmstudio", "ollama"]
+          },
+          {
+            "id": "target_dev_main_llm_model",
+            "label": "DEV Main Model",
+            "type": "string",
+            "env_var": "TARGET_DEV_MAIN_LLM_MODEL",
+            "description": "Model LLM per dev-main.",
+            "secret": false,
+            "required": false,
+            "default": ""
+          },
+          {
+            "id": "db_prod_main_connection_string",
+            "label": "PROD Main Connection String",
+            "type": "string",
+            "env_var": "DB_PROD_MAIN_CONNECTION_STRING",
+            "description": "Connection string SQL Server per il target prod-main.",
+            "secret": true,
+            "required": false,
+            "default": ""
+          },
+          {
+            "id": "target_prod_main_anonymization_enabled",
+            "label": "PROD Main Anonymization",
+            "type": "boolean",
+            "env_var": "TARGET_PROD_MAIN_ANONYMIZATION_ENABLED",
+            "description": "Abilita o disabilita anonimizzazione sul target prod-main.",
+            "secret": false,
+            "required": false,
+            "default": true
+          },
+          {
+            "id": "target_prod_main_anonymization_mode",
+            "label": "PROD Main Anonymization Mode",
+            "type": "select",
+            "env_var": "TARGET_PROD_MAIN_ANONYMIZATION_MODE",
+            "description": "Mode anonimizzazione per prod-main.",
+            "secret": false,
+            "required": false,
+            "default": "hybrid",
+            "allowed_values": ["off", "deterministic", "hybrid", "llm-strict"]
+          },
+          {
+            "id": "target_prod_main_llm_provider",
+            "label": "PROD Main Provider",
+            "type": "select",
+            "env_var": "TARGET_PROD_MAIN_LLM_PROVIDER",
+            "description": "Provider LLM per prod-main.",
+            "secret": false,
+            "required": false,
+            "default": "lmstudio",
+            "allowed_values": ["none", "lmstudio", "ollama"]
+          },
+          {
+            "id": "target_prod_main_llm_model",
+            "label": "PROD Main Model",
+            "type": "string",
+            "env_var": "TARGET_PROD_MAIN_LLM_MODEL",
+            "description": "Model LLM per prod-main.",
+            "secret": false,
+            "required": false,
+            "default": "google/gemma-3-4b"
+          },
+          {
+            "id": "anon_hash_salt",
+            "label": "ANON HASH SALT",
+            "type": "string",
+            "env_var": "ANON_HASH_SALT",
+            "description": "Salt stabile per masking deterministico.",
+            "secret": true,
+            "required": false,
+            "default": ""
+          },
+          {
+            "id": "anon_field_identification",
+            "label": "Field Identification Strategy",
+            "type": "select",
+            "env_var": "ANON_FIELD_IDENTIFICATION",
+            "description": "Strategia di identificazione campi sensibili.",
+            "secret": false,
+            "required": false,
+            "default": "hybrid",
+            "allowed_values": ["hybrid", "heuristic", "llm"]
+          },
+          {
+            "id": "lmstudio_base_url",
+            "label": "LM Studio Base URL",
+            "type": "string",
+            "env_var": "LMSTUDIO_BASE_URL",
+            "description": "Base URL OpenAI-compatible di LM Studio.",
+            "secret": false,
+            "required": false,
+            "default": "http://127.0.0.1:1234/v1"
+          },
+          {
+            "id": "ollama_base_url",
+            "label": "Ollama Base URL",
+            "type": "string",
+            "env_var": "OLLAMA_BASE_URL",
+            "description": "Base URL locale di Ollama.",
+            "secret": false,
+            "required": false,
+            "default": "http://127.0.0.1:11434"
+          },
+          {
+            "id": "anon_fail_open",
+            "label": "ANON Fail Open",
+            "type": "boolean",
+            "env_var": "ANON_FAIL_OPEN",
+            "description": "Se attivo, in llm-strict non blocca la query quando il provider di classificazione fallisce.",
+            "secret": false,
+            "required": false,
+            "default": false
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-sql-db-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../../Binah/tools/_runtime_logs/llm-sql-db-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "runtime",
+            "binah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-sql-db-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-sql-db-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        }
+      ]
+    },
+    {
       "id": "llm-bitbucket-mcp",
       "name": "LLM Bitbucket MCP",
       "kind": "ops",

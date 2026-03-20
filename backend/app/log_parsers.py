@@ -18,7 +18,7 @@ _NODE_DEPRECATION_RE = re.compile(
     r"^\(node:(?P<pid>\d+)\)\s+\[(?P<code>[A-Z0-9]+)\]\s+DeprecationWarning:\s+(?P<message>.*)$"
 )
 _DB_MCP_EVENT_RE = re.compile(
-    r"^\[(?P<logger>DB_(?:DEV|PROD)_MCP)\]\s+(?P<timestamp>\d{4}-\d{2}-\d{2}T[0-9:.]+Z)\s+(?P<event>[a-z_]+)\s+(?P<payload>\{.*\})$"
+    r"^\[(?P<logger>DB_[A-Z0-9_]+_MCP)\]\s+(?P<timestamp>\d{4}-\d{2}-\d{2}T[0-9:.]+Z)\s+(?P<event>[a-z_]+)\s+(?P<payload>\{.*\})$"
 )
 _MCP_ACTIVITY_RE = re.compile(
     r"^\[(?P<logger>MCP_ACTIVITY)\]\s+(?P<payload>\{.*\})$"
