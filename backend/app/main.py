@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .alert_engine import AlertEngine
+from .dashboard_settings import DashboardSettingsManager
 from .log_pipeline import LogPipeline
 from .log_rules import LogRuleEngine
 from .process_manager import ServiceProcessManager
@@ -32,6 +33,7 @@ SERVICES_CONFIG = CONFIG_DIR / "services.json"
 RULES_CONFIG = CONFIG_DIR / "log_rules.json"
 ALERTS_CONFIG = CONFIG_DIR / "alerts.json"
 OPTIONS_STATE = RUNTIME_DIR / "service_options.json"
+DASHBOARD_SETTINGS_STATE = RUNTIME_DIR / "dashboard_settings.json"
 
 registry = ServiceRegistry(SERVICES_CONFIG)
 rule_engine = LogRuleEngine(RULES_CONFIG)
@@ -40,11 +42,13 @@ alert_engine = AlertEngine(ALERTS_CONFIG)
 process_manager = ServiceProcessManager()
 options_manager = ServiceOptionsManager(OPTIONS_STATE)
 options_manager.scrub_persisted_secrets(registry.list_services())
+settings_manager = DashboardSettingsManager(DASHBOARD_SETTINGS_STATE)
 
 
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI):
-    pipeline.prune_old_logs(registry.list_services())
+    retention_days = settings_manager.snapshot(registry.list_services())["preferences"]["log_retention_days"]
+    pipeline.prune_old_logs(registry.list_services(), retention_days=retention_days)
     yield
 
 
@@ -54,6 +58,11 @@ app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
 
 class OptionUpdatePayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
+
+
+class DashboardSettingsUpdatePayload(BaseModel):
+    preferences: dict[str, Any] = Field(default_factory=dict)
+    service_visibility: dict[str, bool] = Field(default_factory=dict)
 
 
 def _service_or_404(service_id: str):
@@ -403,6 +412,63 @@ def dashboard_status() -> dict[str, Any]:
     }
 
 
+@app.get("/api/settings")
+def dashboard_settings() -> dict[str, Any]:
+    services = registry.list_services()
+    snapshot = settings_manager.snapshot(services)
+    return {
+        "preferences": snapshot["preferences"],
+        "service_visibility": snapshot["service_visibility"],
+        "services": [
+            {
+                "id": service.service_id,
+                "name": service.name,
+                "group": service.group,
+                "kind": service.kind,
+                "visible": snapshot["service_visibility"].get(service.service_id, True),
+                "port": service.control.port if service.control else None,
+            }
+            for service in services
+        ],
+    }
+
+
+@app.post("/api/settings")
+def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[str, Any]:
+    services = registry.list_services()
+    before = settings_manager.snapshot(services)
+    after = settings_manager.update(
+        services=services,
+        preferences=payload.preferences,
+        service_visibility=payload.service_visibility,
+    )
+
+    stopped: list[dict[str, Any]] = []
+    for service in services:
+        if before["service_visibility"].get(service.service_id, True) and not after["service_visibility"].get(service.service_id, True):
+            if service.control is None:
+                continue
+            result = process_manager.stop(service)
+            stopped.append(
+                {
+                    "service_id": service.service_id,
+                    "ok": bool(result.get("ok")),
+                    "result": result.get("result"),
+                }
+            )
+
+    retention_days = int(after["preferences"]["log_retention_days"])
+    pruned = pipeline.prune_old_logs(services, retention_days=retention_days)
+
+    return {
+        "ok": True,
+        "preferences": after["preferences"],
+        "service_visibility": after["service_visibility"],
+        "stopped": stopped,
+        "pruned_logs": pruned,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     html_path = FRONTEND_DIR / "index.html"
@@ -411,6 +477,7 @@ def index() -> str:
 
 @app.get("/api/services")
 def list_services() -> list[dict[str, Any]]:
+    visibility = settings_manager.snapshot(registry.list_services())["service_visibility"]
     out: list[dict[str, Any]] = []
     for service in registry.list_services():
         control = None
@@ -430,6 +497,7 @@ def list_services() -> list[dict[str, Any]]:
                 "kind": service.kind,
                 "group": service.group,
                 "capabilities": service.capabilities,
+                "visible": visibility.get(service.service_id, True),
                 "log_sources": [
                     {"path": str(src.path), "channel": src.channel, "tags": src.tags}
                     for src in service.log_sources

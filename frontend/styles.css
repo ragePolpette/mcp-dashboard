@@ -26,12 +26,39 @@ body {
     radial-gradient(circle at 90% 0%, #1d2f45 0%, transparent 30%),
     linear-gradient(180deg, var(--bg-2), var(--bg));
   min-height: 100vh;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(207, 214, 223, 0.34) transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(207, 214, 223, 0.34) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(207, 214, 223, 0.22);
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.36);
 }
 
 .layout {
   max-width: 1400px;
   margin: 0 auto;
   padding: 16px;
+  position: relative;
 }
 
 .topbar {
@@ -341,6 +368,110 @@ button:disabled {
   border-radius: 14px;
   background: var(--panel);
   padding: 12px;
+}
+
+.settings-fab {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  font-size: 1.5rem;
+  color: #c2c8d0;
+  box-shadow: none;
+  z-index: 40;
+}
+
+.settings-fab:hover,
+.settings-fab:focus-visible,
+.settings-fab:active {
+  border: none;
+  background: transparent;
+  color: #ffffff;
+}
+
+.settings-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 84px;
+  width: min(520px, calc(100vw - 40px));
+  max-height: calc(100vh - 110px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(180deg, #17273b 0%, #122131 100%);
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  z-index: 35;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.settings-header h2,
+.settings-section h3 {
+  margin: 0;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings-section {
+  margin-top: 14px;
+  border: 1px solid #26425f;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.28);
+  padding: 10px;
+}
+
+.settings-services-list,
+.settings-form {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-row {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #254261;
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(8, 17, 28, 0.25);
+}
+
+.settings-row-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.settings-row-title {
+  font-weight: 700;
+}
+
+.settings-row-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
 }
 
 .hidden {

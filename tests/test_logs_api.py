@@ -314,3 +314,113 @@ def test_kill_all_stops_services_and_schedules_dashboard_shutdown(monkeypatch):
     assert payload["dashboard_pid"] == 9001
     assert stopped == ["llm-context"]
     assert scheduled == [0.35]
+
+
+def test_settings_endpoint_returns_preferences_and_visibility(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="llm-context",
+            name="LLM Context",
+            kind="rag",
+            group="knowledge",
+            log_sources=[ServiceLogSource(path=Path("ctx.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "ctx"], port=8765),
+        ),
+    ]
+
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+    monkeypatch.setattr(
+        "app.main.settings_manager.snapshot",
+        lambda _services: {
+            "preferences": {
+                "refresh_interval_sec": 10,
+                "show_stopped_services": False,
+                "default_advanced_tab": "logs",
+                "service_order": "group",
+                "show_alerts_in_home": False,
+                "log_retention_days": 21,
+                "recent_rows_limit": 80,
+            },
+            "service_visibility": {"llm-context": False},
+        },
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preferences"]["refresh_interval_sec"] == 10
+    assert payload["service_visibility"]["llm-context"] is False
+    assert payload["services"][0]["visible"] is False
+    assert payload["services"][0]["port"] == 8765
+
+
+def test_settings_update_stops_newly_hidden_services_and_prunes_logs(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="llm-context",
+            name="LLM Context",
+            log_sources=[ServiceLogSource(path=Path("ctx.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "ctx"]),
+        ),
+        ServiceDefinition(
+            service_id="llm-memory",
+            name="LLM Memory",
+            log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+            control=ServiceControlDefinition(workdir=Path("."), start_command=["python", "-m", "mem"]),
+        ),
+    ]
+    stopped: list[str] = []
+
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+    monkeypatch.setattr(
+        "app.main.settings_manager.snapshot",
+        lambda _services: {
+            "preferences": {
+                "refresh_interval_sec": 5,
+                "show_stopped_services": True,
+                "default_advanced_tab": "automatic",
+                "service_order": "manual",
+                "show_alerts_in_home": True,
+                "log_retention_days": 15,
+                "recent_rows_limit": 30,
+            },
+            "service_visibility": {"llm-context": True, "llm-memory": True},
+        },
+    )
+    monkeypatch.setattr(
+        "app.main.settings_manager.update",
+        lambda **kwargs: {
+            "preferences": {
+                "refresh_interval_sec": 10,
+                "show_stopped_services": False,
+                "default_advanced_tab": "logs",
+                "service_order": "status",
+                "show_alerts_in_home": False,
+                "log_retention_days": 21,
+                "recent_rows_limit": 80,
+            },
+            "service_visibility": {"llm-context": False, "llm-memory": True},
+        },
+    )
+    monkeypatch.setattr(
+        "app.main.process_manager.stop",
+        lambda service: stopped.append(service.service_id) or {"ok": True, "result": "stopped"},
+    )
+    monkeypatch.setattr("app.main.pipeline.prune_old_logs", lambda _services, retention_days=15: ["ctx.log"])
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/settings",
+        json={
+            "preferences": {"refresh_interval_sec": 10},
+            "service_visibility": {"llm-context": False},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["ok"] is True
+    assert stopped == ["llm-context"]
+    assert payload["pruned_logs"] == ["ctx.log"]
