@@ -163,8 +163,8 @@
     <section id="settingsPanel" class="settings-panel hidden" aria-live="polite">
       <div class="settings-header">
         <div>
-          <h2>Impostazioni</h2>
-          <p class="muted">Preferenze dashboard e visibilita' servizi.</p>
+          <h2>Control Center</h2>
+          <p class="muted">Gestione dashboard, servizi visibili e vault locale.</p>
         </div>
         <div class="settings-actions">
           <button id="saveSettingsBtn" class="btn-ok">Salva Impostazioni</button>
@@ -172,27 +172,45 @@
         </div>
       </div>
 
-      <section class="settings-section">
-        <h3>Servizi visibili</h3>
-        <div id="settingsServicesList" class="settings-services-list"></div>
-      </section>
+      <div id="settingsFlash" class="settings-flash hidden"></div>
 
-      <section class="settings-section">
-        <h3>Dashboard</h3>
-        <div id="settingsPreferencesForm" class="settings-form"></div>
-      </section>
+      <div class="settings-tabs" role="tablist" aria-label="Sezioni impostazioni dashboard">
+        <button id="settingsServicesTabBtn" class="settings-tab active" type="button" role="tab" aria-selected="true">Servizi</button>
+        <button id="settingsDashboardTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Dashboard</button>
+        <button id="settingsVaultTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Vault</button>
+      </div>
 
-      <section class="settings-section">
-        <h3>Vault</h3>
-        <div id="vaultPanel" class="vault-panel">
-          <div id="vaultStatusCard" class="vault-status-card"></div>
-          <div id="vaultControls" class="vault-controls"></div>
-          <div id="vaultEntries" class="vault-entries"></div>
-        </div>
-      </section>
+      <div id="settingsServicesView" class="settings-view">
+        <section class="settings-section">
+          <h3>Servizi visibili</h3>
+          <div id="settingsServicesList" class="settings-services-list"></div>
+        </section>
+      </div>
+
+      <div id="settingsDashboardView" class="settings-view hidden">
+        <section class="settings-section">
+          <h3>Preferenze dashboard</h3>
+          <div id="settingsPreferencesForm" class="settings-form"></div>
+        </section>
+      </div>
+
+      <div id="settingsVaultView" class="settings-view hidden">
+        <section class="settings-section settings-section-vault">
+          <h3>Vault locale</h3>
+          <div id="vaultPanel" class="vault-panel">
+            <div id="vaultStatusCard" class="vault-status-card"></div>
+            <div id="vaultControls" class="vault-controls"></div>
+            <div id="vaultEntries" class="vault-entries"></div>
+          </div>
+        </section>
+      </div>
     </section>
   </main>
 
   <script src="/assets/app.js"></script>
 </body>
 </html>
+
+
+
+

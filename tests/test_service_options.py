@@ -283,3 +283,22 @@ def test_scrub_persisted_secrets_removes_existing_disk_values():
         assert "Server=.;Database=Prod;" not in payload
         assert "anon_hash_salt" not in payload
         assert "Orsa-Pietra-Faro-2026!" not in payload
+
+
+def test_secret_ref_usage_lists_persisted_vault_bindings():
+    with tempfile.TemporaryDirectory() as tmp:
+        runtime = Path(tmp) / "runtime"
+        state = runtime / "service_options.json"
+        vault = DashboardSecretVault(runtime / "vault")
+        vault.initialize("Passphrase-2026!")
+        vault.upsert_secret("db.prod.connection", "Server=.;Database=Prod;")
+        manager = ServiceOptionsManager(state, vault=vault)
+        service = _db_prod_service()
+
+        manager.update_options(service, {"db_prod_connection_string": {"source": "vault", "ref": "db.prod.connection"}})
+
+        usage = manager.secret_ref_usage()
+        assert usage["vault://db.prod.connection"][0] == {
+            "service_id": "llm-db-prod-mcp",
+            "option_id": "db_prod_connection_string",
+        }

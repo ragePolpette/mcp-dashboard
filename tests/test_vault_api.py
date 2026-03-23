@@ -59,3 +59,22 @@ def test_vault_delete_entry(monkeypatch):
         payload = response.json()
         assert payload["ok"] is True
         assert payload["vault"]["entry_count"] == 0
+
+
+def test_vault_status_exposes_ref_usage(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        vault = DashboardSecretVault(Path(tmp) / "vault")
+        vault.initialize("Passphrase-2026!")
+        vault.upsert_secret("db.prod.connection", "Server=.;Database=Prod;")
+        monkeypatch.setattr("app.main.vault_manager", vault)
+        monkeypatch.setattr(
+            "app.main.options_manager.secret_ref_usage",
+            lambda: {"vault://db.prod.connection": [{"service_id": "llm-db-prod-mcp", "option_id": "db_prod_connection_string"}]},
+        )
+
+        client = TestClient(app)
+        response = client.get("/api/vault")
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["ref_usage"]["vault://db.prod.connection"][0]["service_id"] == "llm-db-prod-mcp"
