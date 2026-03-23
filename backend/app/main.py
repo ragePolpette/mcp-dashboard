@@ -145,6 +145,7 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "timestamp": entry.get("timestamp"),
                     "level": entry.get("level"),
                     "tool": fields.get("tool"),
+                    "target_id": fields.get("target_id"),
                     "mode": fields.get("mode"),
                     "row_count": fields.get("row_count"),
                     "result_truncated": fields.get("result_truncated"),
@@ -165,6 +166,7 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             pending_by_tool.setdefault(tool, []).append(
                 {
                     "tool": tool,
+                    "target_id": fields.get("target_id"),
                     "query_preview": preview,
                     "query_full": sql_text,
                     "query_full_truncated": preview_truncated,
@@ -185,6 +187,7 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "timestamp": entry.get("timestamp"),
                 "level": entry.get("level"),
                 "tool": tool,
+                "target_id": pending.get("target_id") or fields.get("target_id") or response.get("target_id"),
                 "mode": response.get("mode"),
                 "row_count": response.get("rowCount"),
                 "result_truncated": response.get("truncated"),

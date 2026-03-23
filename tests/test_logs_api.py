@@ -78,6 +78,7 @@ def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
             "event": "query_in",
             "fields": {
                 "tool": "db_dev_read",
+                "target_id": "dev-main",
                 "sql": "select * from aziende where codice = 14739",
                 "parameters": {"codice": 14739},
             },
@@ -89,6 +90,7 @@ def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
                 "tool": "db_dev_read",
                 "response": {
                     "tool": "db_dev_read",
+                    "target_id": "dev-main",
                     "mode": "read",
                     "rowCount": 1,
                     "truncated": False,
@@ -108,10 +110,58 @@ def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
     assert payload["count"] == 1
     query = payload["queries"][0]
     assert query["tool"] == "db_dev_read"
+    assert query["target_id"] == "dev-main"
     assert query["mode"] == "read"
     assert query["row_count"] == 1
     assert query["query_full"] == "select * from aziende where codice = 14739"
     assert query["parameter_keys"] == ["codice"]
+
+
+def test_activity_endpoint_supports_bitbucket_api_calls(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-bitbucket-mcp",
+        name="LLM Bitbucket MCP",
+        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stdout")],
+    )
+    entries = [
+        {
+            "timestamp": "2026-03-20T08:00:00+01:00",
+            "event": "query_in",
+            "fields": {
+                "tool": "bb_api",
+                "operation": "GET",
+                "query_text": "/2.0/user",
+                "agent_id": "codex",
+            },
+        },
+        {
+            "timestamp": "2026-03-20T08:00:01+01:00",
+            "event": "query_out",
+            "fields": {
+                "tool": "bb_api",
+                "operation": "GET",
+                "agent_id": "codex",
+                "success": True,
+                "result_count": 1,
+                "has_results": True,
+            },
+        },
+    ]
+
+    monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
+    monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-bitbucket-mcp/activity")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["count"] == 1
+    item = payload["activity"][0]
+    assert item["tool"] == "bb_api"
+    assert item["kind"] == "read"
+    assert item["request_text"] == "/2.0/user"
+    assert "success=True" in item["response_text"]
 
 
 def test_clear_logs_truncates_service_log_files(monkeypatch):
