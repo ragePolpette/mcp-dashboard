@@ -66,6 +66,10 @@ let dashboardSettings = {
   service_visibility: {}
 };
 let refreshTimer = null;
+let cardRenderTimer = null;
+let advancedQueryRefreshTimer = null;
+let advancedActivityRefreshTimer = null;
+let advancedMetricsAlertsTimer = null;
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
@@ -74,6 +78,77 @@ const queriesByService = new Map();
 const activityByService = new Map();
 const alertsByService = new Map();
 const advancedFilters = { level: "", event: "", channel: "", source: "", text: "" };
+
+function clearTimer(timerId) {
+  if (timerId) {
+    window.clearTimeout(timerId);
+  }
+  return null;
+}
+
+function scheduleCardRender(delay = 120) {
+  cardRenderTimer = clearTimer(cardRenderTimer);
+  cardRenderTimer = window.setTimeout(() => {
+    cardRenderTimer = null;
+    renderCards();
+  }, delay);
+}
+
+function scheduleAdvancedQueryRefresh(serviceId, tail = 2000, delay = 180) {
+  advancedQueryRefreshTimer = clearTimer(advancedQueryRefreshTimer);
+  advancedQueryRefreshTimer = window.setTimeout(async () => {
+    advancedQueryRefreshTimer = null;
+    if (!advancedServiceId || advancedServiceId !== serviceId || !supportsQueryInspector(serviceId)) {
+      return;
+    }
+    await loadServiceQueries(serviceId, tail);
+    if (advancedServiceId === serviceId) {
+      renderQueriesForAdvanced(serviceId);
+    }
+  }, delay);
+}
+
+function scheduleAdvancedActivityRefresh(serviceId, tail = 2000, delay = 220) {
+  advancedActivityRefreshTimer = clearTimer(advancedActivityRefreshTimer);
+  advancedActivityRefreshTimer = window.setTimeout(async () => {
+    advancedActivityRefreshTimer = null;
+    if (!advancedServiceId || advancedServiceId !== serviceId || !supportsActivity(serviceId)) {
+      return;
+    }
+    await loadServiceActivity(serviceId, tail);
+    if (advancedServiceId === serviceId) {
+      renderActivityForAdvanced(serviceId);
+    }
+  }, delay);
+}
+
+function scheduleAdvancedMetricsAlertsRefresh(serviceId, delay = 260) {
+  advancedMetricsAlertsTimer = clearTimer(advancedMetricsAlertsTimer);
+  advancedMetricsAlertsTimer = window.setTimeout(async () => {
+    advancedMetricsAlertsTimer = null;
+    if (!advancedServiceId || advancedServiceId !== serviceId) {
+      return;
+    }
+    await Promise.all([refreshServiceMetrics(serviceId), refreshServiceAlerts(serviceId)]);
+    if (advancedServiceId !== serviceId) {
+      return;
+    }
+    const service = services.find(item => item.id === serviceId);
+    if (service) {
+      renderAdvancedMeta(service);
+    }
+    if (supportsAlerts(serviceId)) {
+      renderAlertsForAdvanced(serviceId);
+    }
+    scheduleCardRender(80);
+  }, delay);
+}
+
+function clearAdvancedRefreshTimers() {
+  advancedQueryRefreshTimer = clearTimer(advancedQueryRefreshTimer);
+  advancedActivityRefreshTimer = clearTimer(advancedActivityRefreshTimer);
+  advancedMetricsAlertsTimer = clearTimer(advancedMetricsAlertsTimer);
+}
 
 function normalizeServiceDefinition(service) {
   return {
@@ -2002,6 +2077,7 @@ function stopAdvancedStream() {
     advancedEventSource.close();
     advancedEventSource = null;
   }
+  clearAdvancedRefreshTimers();
   if (advancedServiceId) {
     const service = services.find(item => item.id === advancedServiceId);
     if (service) {
@@ -2170,8 +2246,12 @@ function startAdvancedStream() {
   }
   advancedEventSource.onmessage = evt => {
     try {
+      const currentServiceId = advancedServiceId;
+      if (!currentServiceId) {
+        return;
+      }
       const entry = JSON.parse(evt.data);
-      const state = getServiceState(advancedServiceId);
+      const state = getServiceState(currentServiceId);
       state.entries.unshift(entry);
       if (state.entries.length > currentRecentRowsLimit()) {
         state.entries = state.entries.slice(0, currentRecentRowsLimit());
@@ -2180,20 +2260,14 @@ function startAdvancedStream() {
       if (entryMatchesAdvancedFilters(entry)) {
         appendAdvancedEntries([entry], { prepend: true });
       }
-      if (supportsQueryInspector(advancedServiceId) && isDbQueryEvent(entry)) {
-        loadServiceQueries(advancedServiceId, 2000).then(() => renderQueriesForAdvanced(advancedServiceId));
+      if (supportsQueryInspector(currentServiceId) && isDbQueryEvent(entry)) {
+        scheduleAdvancedQueryRefresh(currentServiceId, 2000);
       }
-      if (supportsActivity(advancedServiceId)) {
-        loadServiceActivity(advancedServiceId, 2000).then(() => renderActivityForAdvanced(advancedServiceId));
+      if (supportsActivity(currentServiceId)) {
+        scheduleAdvancedActivityRefresh(currentServiceId, 2000);
       }
-      Promise.all([
-        refreshServiceMetrics(advancedServiceId),
-        refreshServiceAlerts(advancedServiceId)
-      ]).then(() => {
-        renderAlertsForAdvanced(advancedServiceId);
-        renderCards();
-      });
-      renderCards();
+      scheduleAdvancedMetricsAlertsRefresh(currentServiceId);
+      scheduleCardRender();
     } catch {
       // ignore malformed chunk
     }
