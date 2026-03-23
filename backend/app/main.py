@@ -400,6 +400,25 @@ def _compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _build_service_overview(
+    service,
+    *,
+    tail: int = 2000,
+    recent_count: int = 1,
+) -> dict[str, Any]:
+    entries = pipeline.read_tail(service, tail=tail)
+    newest_entries = _entries_newest_first(entries)
+    metrics = _compute_metrics(entries)
+    alerts = alert_engine.evaluate(service_id=service.service_id, entries=entries, metrics=metrics)
+    return {
+        "service_id": service.service_id,
+        "runtime": process_manager.status(service),
+        "metrics": metrics,
+        "alerts": alerts,
+        "entries": newest_entries[:recent_count],
+    }
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -412,6 +431,23 @@ def dashboard_status() -> dict[str, Any]:
         "pid": os.getpid(),
         "service_count": len(registry.list_services()),
         "evaluated_at": datetime.now().astimezone().isoformat(),
+    }
+
+
+@app.get("/api/dashboard/overview")
+def dashboard_overview(
+    tail: int = Query(default=2000, ge=1, le=10000),
+    recent_count: int = Query(default=1, ge=1, le=50),
+) -> dict[str, Any]:
+    services = registry.list_services()
+    snapshot = settings_manager.snapshot(services)
+    return {
+        "status": "ok",
+        "pid": os.getpid(),
+        "service_count": len(services),
+        "evaluated_at": datetime.now().astimezone().isoformat(),
+        "service_visibility": snapshot["service_visibility"],
+        "services": [_build_service_overview(service, tail=tail, recent_count=recent_count) for service in services],
     }
 
 
