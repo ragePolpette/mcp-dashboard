@@ -1405,6 +1405,48 @@ async function loadDashboardStatus() {
   dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"}`;
 }
 
+function applyDashboardOverview(payload) {
+  dashboardStatus = {
+    pid: payload?.pid || null,
+    service_count: payload?.service_count || services.length,
+    evaluated_at: payload?.evaluated_at || null
+  };
+  dashboardPidText.textContent = `PID: ${dashboardStatus.pid || "n/d"}`;
+  if (payload?.service_visibility) {
+    dashboardSettings = {
+      ...dashboardSettings,
+      service_visibility: { ...dashboardSettings.service_visibility, ...payload.service_visibility }
+    };
+  }
+
+  const overviewById = new Map((payload?.services || []).map(item => [item.service_id, item]));
+  services = services
+    .map(service => {
+      const overview = overviewById.get(service.id);
+      if (!overview) {
+        return {
+          ...service,
+          visible: dashboardSettings.service_visibility[service.id] ?? service.visible ?? true
+        };
+      }
+      statusByService.set(service.id, overview.runtime || getRuntimeStatus(service.id));
+      metricsByService.set(service.id, overview.metrics || getServiceMetrics(service.id));
+      alertsByService.set(service.id, overview.alerts || getServiceAlerts(service.id));
+      const state = getServiceState(service.id);
+      state.entries = Array.isArray(overview.entries) ? overview.entries : [];
+      return {
+        ...service,
+        visible: dashboardSettings.service_visibility[service.id] ?? service.visible ?? true
+      };
+    })
+    .sort(compareServices);
+}
+
+async function refreshDashboardOverview({ tail = 2000, recentCount = 1 } = {}) {
+  const payload = await apiJson(`/api/dashboard/overview?tail=${tail}&recent_count=${recentCount}`);
+  applyDashboardOverview(payload);
+}
+
 async function loadDashboardSettings() {
   const payload = await apiJson("/api/settings");
   dashboardSettings = {
@@ -1617,7 +1659,8 @@ async function saveDashboardSettings() {
       advancedServiceId = null;
       advancedPanel.classList.add("hidden");
     }
-    await Promise.all([loadServices(), refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), refreshAllLogs(currentRecentRowsLimit())]);
+    await loadServices();
+    await refreshDashboardOverview({ tail: 2000, recentCount: 1 });
     renderSettingsPanel();
     renderCards();
   } catch (error) {
@@ -1645,8 +1688,7 @@ function scheduleAutoRefresh() {
     return;
   }
   refreshTimer = window.setInterval(() => {
-    Promise.all([refreshAllStatuses(), refreshAllMetrics(), refreshAllAlerts(), loadDashboardStatus()]).then(() => {
-      services = [...services].sort(compareServices);
+    refreshDashboardOverview({ tail: 2000, recentCount: 1 }).then(() => {
       renderCards();
       if (advancedServiceId) {
         const service = services.find(s => s.id === advancedServiceId);
@@ -2013,8 +2055,7 @@ async function refreshAllLogs(tail = currentRecentRowsLimit()) {
 }
 
 async function refreshAll(tail = currentRecentRowsLimit()) {
-  await Promise.all([refreshAllStatuses(), refreshAllLogs(tail), refreshAllMetrics(), refreshAllAlerts()]);
-  services = [...services].sort(compareServices);
+  await refreshDashboardOverview({ tail: Math.max(tail * 8, 2000), recentCount: 1 });
   renderCards();
 }
 
@@ -2374,9 +2415,8 @@ saveOptionsBtn.addEventListener("click", async () => {
 async function boot() {
   await loadServices();
   await loadDashboardSettings();
-  await loadDashboardStatus();
   renderSettingsPanel();
-  await refreshAll(currentRecentRowsLimit());
+  await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
   scheduleAutoRefresh();
 }
 
