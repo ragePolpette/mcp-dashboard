@@ -15,6 +15,7 @@ from app.models import (  # noqa: E402
     ServiceLogSource,
     ServiceOptionDefinition,
 )
+from app.secret_vault import DashboardSecretVault  # noqa: E402
 from app.service_options import ServiceOptionsManager  # noqa: E402
 
 
@@ -190,6 +191,62 @@ def test_secret_option_is_ephemeral_across_manager_restart():
         assert all(item["is_set"] is False for item in listed)
         assert "DB_PROD_CONNECTION_STRING" not in manager_restarted.options_env(service)
         assert "ANON_HASH_SALT" not in manager_restarted.options_env(service)
+
+
+def test_secret_option_can_resolve_from_vault_reference():
+    with tempfile.TemporaryDirectory() as tmp:
+        runtime = Path(tmp) / "runtime"
+        state = runtime / "service_options.json"
+        vault = DashboardSecretVault(runtime / "vault")
+        vault.initialize("Passphrase-2026!")
+        vault.upsert_secret("db.prod.connection", "Server=.;Database=Prod;")
+        manager = ServiceOptionsManager(state, vault=vault)
+        service = _db_prod_service()
+
+        manager.update_options(
+            service,
+            {
+                "db_prod_connection_string": {"source": "vault", "ref": "db.prod.connection"},
+                "anon_hash_salt": {"source": "session", "value": "Orsa-Pietra-Faro-2026!"},
+            },
+        )
+        listed = manager.list_options(service)
+        connection = next(item for item in listed if item["id"] == "db_prod_connection_string")
+        assert connection["secret_source"] == "vault"
+        assert connection["vault_ref"] == "vault://db.prod.connection"
+        assert connection["is_ready"] is True
+
+        env = manager.options_env(service)
+        assert env["DB_PROD_CONNECTION_STRING"] == "Server=.;Database=Prod;"
+        assert env["ANON_HASH_SALT"] == "Orsa-Pietra-Faro-2026!"
+
+
+def test_secret_vault_reference_survives_manager_restart_but_requires_unlock():
+    with tempfile.TemporaryDirectory() as tmp:
+        runtime = Path(tmp) / "runtime"
+        state = runtime / "service_options.json"
+        vault = DashboardSecretVault(runtime / "vault")
+        vault.initialize("Passphrase-2026!")
+        vault.upsert_secret("db.prod.connection", "Server=.;Database=Prod;")
+        service = _db_prod_service()
+
+        manager = ServiceOptionsManager(state, vault=vault)
+        manager.update_options(service, {"db_prod_connection_string": {"source": "vault", "ref": "db.prod.connection"}})
+        vault.lock()
+
+        manager_restarted = ServiceOptionsManager(state, vault=vault)
+        listed = manager_restarted.list_options(service)
+        connection = next(item for item in listed if item["id"] == "db_prod_connection_string")
+        assert connection["is_set"] is True
+        assert connection["is_ready"] is False
+        assert connection["secret_source"] == "vault"
+
+        failed = False
+        try:
+            manager_restarted.options_env(service)
+        except ValueError:
+            failed = True
+        assert failed is True
 
 
 def test_missing_required_options_reports_absent_secret():

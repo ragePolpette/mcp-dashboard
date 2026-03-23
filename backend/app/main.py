@@ -21,6 +21,7 @@ from .dashboard_settings import DashboardSettingsManager
 from .log_pipeline import LogPipeline
 from .log_rules import LogRuleEngine
 from .process_manager import ServiceProcessManager
+from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 from .service_options import ServiceOptionsManager
 from .services_registry import ServiceRegistry
 
@@ -34,13 +35,15 @@ RULES_CONFIG = CONFIG_DIR / "log_rules.json"
 ALERTS_CONFIG = CONFIG_DIR / "alerts.json"
 OPTIONS_STATE = RUNTIME_DIR / "service_options.json"
 DASHBOARD_SETTINGS_STATE = RUNTIME_DIR / "dashboard_settings.json"
+VAULT_ROOT = RUNTIME_DIR / "vault"
 
 registry = ServiceRegistry(SERVICES_CONFIG)
 rule_engine = LogRuleEngine(RULES_CONFIG)
 pipeline = LogPipeline(rule_engine)
 alert_engine = AlertEngine(ALERTS_CONFIG)
 process_manager = ServiceProcessManager()
-options_manager = ServiceOptionsManager(OPTIONS_STATE)
+vault_manager = DashboardSecretVault(VAULT_ROOT)
+options_manager = ServiceOptionsManager(OPTIONS_STATE, vault=vault_manager)
 options_manager.scrub_persisted_secrets(registry.list_services())
 settings_manager = DashboardSettingsManager(DASHBOARD_SETTINGS_STATE)
 
@@ -63,6 +66,15 @@ class OptionUpdatePayload(BaseModel):
 class DashboardSettingsUpdatePayload(BaseModel):
     preferences: dict[str, Any] = Field(default_factory=dict)
     service_visibility: dict[str, bool] = Field(default_factory=dict)
+
+
+class VaultPassphrasePayload(BaseModel):
+    passphrase: str = ""
+
+
+class VaultEntryPayload(BaseModel):
+    ref: str = ""
+    value: str = ""
 
 
 def _service_or_404(service_id: str):
@@ -505,6 +517,57 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
         "service_visibility": after["service_visibility"],
         "stopped": stopped,
         "pruned_logs": pruned,
+    }
+
+
+@app.get("/api/vault")
+def vault_status() -> dict[str, Any]:
+    return vault_manager.status()
+
+
+@app.post("/api/vault/init")
+def vault_initialize(payload: VaultPassphrasePayload) -> dict[str, Any]:
+    try:
+        return vault_manager.initialize(payload.passphrase)
+    except LocalSecretVaultError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+
+@app.post("/api/vault/unlock")
+def vault_unlock(payload: VaultPassphrasePayload) -> dict[str, Any]:
+    try:
+        return vault_manager.unlock(payload.passphrase)
+    except LocalSecretVaultError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+
+@app.post("/api/vault/lock")
+def vault_lock() -> dict[str, Any]:
+    return vault_manager.lock()
+
+
+@app.post("/api/vault/entries")
+def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
+    try:
+        entry = vault_manager.upsert_secret(payload.ref, payload.value)
+    except LocalSecretVaultError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    return {
+        "ok": True,
+        "entry": entry,
+        "vault": vault_manager.status(),
+    }
+
+
+@app.delete("/api/vault/entries")
+def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
+    try:
+        status = vault_manager.delete_secret(ref)
+    except LocalSecretVaultError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    return {
+        "ok": True,
+        "vault": status,
     }
 
 
