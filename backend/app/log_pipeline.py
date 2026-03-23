@@ -15,6 +15,7 @@ from .log_rules import LogRuleEngine
 from .models import ParsedLogEntry, ServiceDefinition, ServiceLogSource
 
 DEFAULT_LOG_RETENTION_DAYS = 15
+TAIL_READ_CHUNK_BYTES = 16 * 1024
 
 
 def _tail_lines(path: Path, tail: int) -> list[str]:
@@ -23,10 +24,29 @@ def _tail_lines(path: Path, tail: int) -> list[str]:
     if not path.exists():
         return []
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        size = path.stat().st_size
     except OSError:
         return []
-    return lines[-tail:]
+    if size <= 0:
+        return []
+
+    buffer = b""
+    newline_count = 0
+    position = size
+
+    try:
+        with path.open("rb") as handle:
+            while position > 0 and newline_count <= tail:
+                read_size = min(TAIL_READ_CHUNK_BYTES, position)
+                position -= read_size
+                handle.seek(position, os.SEEK_SET)
+                chunk = handle.read(read_size)
+                buffer = chunk + buffer
+                newline_count = buffer.count(b"\n")
+    except OSError:
+        return []
+
+    return buffer.decode("utf-8", errors="replace").splitlines()[-tail:]
 
 
 class LogPipeline:

@@ -11,7 +11,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.log_pipeline import LogPipeline  # noqa: E402
+from app.log_pipeline import LogPipeline, _tail_lines  # noqa: E402
 from app.log_rules import LogRuleEngine  # noqa: E402
 from app.models import ServiceDefinition, ServiceLogSource  # noqa: E402
 
@@ -148,3 +148,41 @@ def test_prune_old_logs_removes_entries_older_than_retention_window():
         assert "stack line old" not in final_text
         assert "2026-03-19T09:00:00.000Z" in final_text
         assert "stack line new" in final_text
+
+
+def test_tail_lines_returns_last_lines_without_loading_full_prefix():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        log_path = tmp_dir / "big.log"
+        log_path.write_text("\n".join(f"line-{index}" for index in range(1, 5001)) + "\n", encoding="utf-8")
+
+        result = _tail_lines(log_path, 3)
+
+        assert result == ["line-4998", "line-4999", "line-5000"]
+
+
+def test_read_tail_cache_invalidates_when_file_changes():
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        rules_path = tmp_dir / "rules.json"
+        log_path = tmp_dir / "service.log"
+        _write_json(rules_path, {"rule_sets": {"default": []}})
+        log_path.write_text("first\nsecond\n", encoding="utf-8")
+
+        engine = LogRuleEngine(rules_path)
+        pipeline = LogPipeline(engine)
+        service = ServiceDefinition(
+            service_id="svc-cache",
+            name="Cache Service",
+            log_sources=[ServiceLogSource(path=log_path, channel="stdout")],
+            parser_chain=["json", "python", "uvicorn_access", "node_deprecation"],
+            rule_sets=[],
+        )
+
+        first_read = pipeline.read_tail(service, 5)
+        log_path.write_text("first\nsecond\nthird\n", encoding="utf-8")
+        second_read = pipeline.read_tail(service, 5)
+
+        assert len(first_read) == 2
+        assert len(second_read) == 3
+        assert second_read[-1]["message"] == "third"
