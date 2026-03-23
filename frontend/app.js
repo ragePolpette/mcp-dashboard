@@ -839,6 +839,9 @@ function renderQueriesForAdvanced(serviceId) {
     const toolTd = document.createElement("td");
     toolTd.textContent = `${query.tool || "n/d"}${query.mode ? ` (${query.mode})` : ""}`;
 
+    const targetTd = document.createElement("td");
+    targetTd.textContent = query.target_id || "n/d";
+
     const rowsTd = document.createElement("td");
     rowsTd.textContent = String(query.row_count ?? "n/d");
 
@@ -864,6 +867,7 @@ function renderQueriesForAdvanced(serviceId) {
 
     tr.appendChild(timeTd);
     tr.appendChild(toolTd);
+    tr.appendChild(targetTd);
     tr.appendChild(rowsTd);
     tr.appendChild(queryTd);
     frag.appendChild(tr);
@@ -940,6 +944,132 @@ function renderAlertsForAdvanced(serviceId) {
     frag.appendChild(li);
   }
   alertList.appendChild(frag);
+}
+
+function optionGroupDefinitions(serviceId) {
+  if (serviceId !== "llm-sql-db-mcp") {
+    return null;
+  }
+
+  return [
+    {
+      id: "dev-main",
+      title: "DEV Main",
+      description: "Connessione, write policy e strategia AI per il target dev-main.",
+      match: opt => opt.id === "db_dev_main_connection_string" || opt.id.startsWith("target_dev_main_")
+    },
+    {
+      id: "prod-main",
+      title: "PROD Main",
+      description: "Connessione, write policy e anonimizzazione per il target prod-main.",
+      match: opt => opt.id === "db_prod_main_connection_string" || opt.id.startsWith("target_prod_main_")
+    },
+    {
+      id: "provider-runtime",
+      title: "Provider Runtime",
+      description: "Endpoint locali dei provider AI usati dai target che richiedono classificazione.",
+      match: opt => opt.id === "lmstudio_base_url" || opt.id === "ollama_base_url"
+    },
+    {
+      id: "global-anon",
+      title: "Global Anonymization",
+      description: "Impostazioni globali del core di anonimizzazione condiviso.",
+      match: opt => ["anon_hash_salt", "anon_field_identification", "anon_fail_open"].includes(opt.id)
+    }
+  ];
+}
+
+function createOptionRow(opt) {
+  const row = document.createElement("div");
+  row.className = "option-row";
+
+  const label = document.createElement("label");
+  label.className = "option-label";
+  label.textContent = opt.label || opt.id;
+  label.htmlFor = `opt-${opt.id}`;
+
+  const hint = document.createElement("div");
+  hint.className = "option-hint";
+
+  let input;
+  if (opt.type === "boolean") {
+    input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = Boolean(opt.value);
+    hint.textContent = opt.description || "";
+  } else if (opt.type === "integer") {
+    input = document.createElement("input");
+    input.type = "number";
+    input.value = opt.value ?? "";
+    hint.textContent = opt.description || "";
+  } else if (opt.type === "select") {
+    input = document.createElement("select");
+    const allowed = opt.allowed_values || [];
+    for (const val of allowed) {
+      const option = document.createElement("option");
+      option.value = val;
+      option.textContent = val;
+      if (String(opt.value ?? "") === val) {
+        option.selected = true;
+      }
+      input.appendChild(option);
+    }
+    hint.textContent = opt.description || "";
+  } else {
+    input = document.createElement("input");
+    input.type = opt.secret ? "password" : "text";
+    input.value = opt.secret ? "" : (opt.value ?? "");
+    if (opt.secret) {
+      input.autocomplete = "new-password";
+      input.spellcheck = false;
+      input.placeholder = opt.is_set ? "******** (già impostata)" : "inserisci valore";
+      hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore presente solo in memoria della dashboard corrente." : "Valore non impostato."} Non verra' salvato su disco.`.trim();
+    } else {
+      hint.textContent = opt.description || "";
+    }
+  }
+
+  input.id = `opt-${opt.id}`;
+  input.dataset.optionId = opt.id;
+  input.dataset.optionType = opt.type;
+  input.dataset.secret = opt.secret ? "true" : "false";
+
+  row.appendChild(label);
+  row.appendChild(input);
+  if (hint.textContent) {
+    row.appendChild(hint);
+  }
+  return row;
+}
+
+function renderOptionGroup(container, title, description, options) {
+  if (!options.length) {
+    return;
+  }
+
+  const section = document.createElement("section");
+  section.className = "option-group";
+
+  const heading = document.createElement("h4");
+  heading.className = "option-group-title";
+  heading.textContent = title;
+  section.appendChild(heading);
+
+  if (description) {
+    const descriptionNode = document.createElement("p");
+    descriptionNode.className = "option-group-description muted";
+    descriptionNode.textContent = description;
+    section.appendChild(descriptionNode);
+  }
+
+  const body = document.createElement("div");
+  body.className = "option-group-body";
+  for (const opt of options) {
+    body.appendChild(createOptionRow(opt));
+  }
+
+  section.appendChild(body);
+  container.appendChild(section);
 }
 
 function appendPreviewField(container, label, previewValue, fullValue) {
@@ -1544,69 +1674,30 @@ function renderOptionsForm(serviceId) {
     optionsForm.appendChild(empty);
     return;
   }
-
-  for (const opt of options) {
-    const row = document.createElement("div");
-    row.className = "option-row";
-
-    const label = document.createElement("label");
-    label.className = "option-label";
-    label.textContent = opt.label || opt.id;
-    label.htmlFor = `opt-${opt.id}`;
-
-    const hint = document.createElement("div");
-    hint.className = "option-hint";
-
-    let input;
-    if (opt.type === "boolean") {
-      input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = Boolean(opt.value);
-      hint.textContent = opt.description || "";
-    } else if (opt.type === "integer") {
-      input = document.createElement("input");
-      input.type = "number";
-      input.value = opt.value ?? "";
-      hint.textContent = opt.description || "";
-    } else if (opt.type === "select") {
-      input = document.createElement("select");
-      const allowed = opt.allowed_values || [];
-      for (const val of allowed) {
-        const option = document.createElement("option");
-        option.value = val;
-        option.textContent = val;
-        if (String(opt.value ?? "") === val) {
-          option.selected = true;
-        }
-        input.appendChild(option);
-      }
-      hint.textContent = opt.description || "";
-    } else {
-      input = document.createElement("input");
-      input.type = opt.secret ? "password" : "text";
-      input.value = opt.secret ? "" : (opt.value ?? "");
-      if (opt.secret) {
-        input.autocomplete = "new-password";
-        input.spellcheck = false;
-        input.placeholder = opt.is_set ? "******** (già impostata)" : "inserisci valore";
-        hint.textContent = `${opt.description || ""} ${opt.is_set ? "Valore presente solo in memoria della dashboard corrente." : "Valore non impostato."} Non verra' salvato su disco.`.trim();
-      } else {
-        hint.textContent = opt.description || "";
-      }
+  const groups = optionGroupDefinitions(serviceId);
+  if (!groups) {
+    for (const opt of options) {
+      optionsForm.appendChild(createOptionRow(opt));
     }
-
-    input.id = `opt-${opt.id}`;
-    input.dataset.optionId = opt.id;
-    input.dataset.optionType = opt.type;
-    input.dataset.secret = opt.secret ? "true" : "false";
-
-    row.appendChild(label);
-    row.appendChild(input);
-    if (hint.textContent) {
-      row.appendChild(hint);
-    }
-    optionsForm.appendChild(row);
+    return;
   }
+
+  const matched = new Set();
+  for (const group of groups) {
+    const groupOptions = options.filter(opt => group.match(opt));
+    for (const opt of groupOptions) {
+      matched.add(opt.id);
+    }
+    renderOptionGroup(optionsForm, group.title, group.description, groupOptions);
+  }
+
+  const remaining = options.filter(opt => !matched.has(opt.id));
+  renderOptionGroup(
+    optionsForm,
+    "Altre opzioni",
+    "Impostazioni non classificate nei gruppi principali del gateway SQL.",
+    remaining
+  );
 }
 
 function collectOptionsFromForm() {
