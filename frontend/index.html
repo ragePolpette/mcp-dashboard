@@ -25,7 +25,7 @@
       <div class="advanced-header">
         <div>
           <h2 id="advancedTitle">Dettaglio servizio</h2>
-          <p id="advancedMeta" class="muted"></p>
+          <div id="advancedMeta" class="advanced-summary-grid"></div>
         </div>
       </div>
 
@@ -57,39 +57,43 @@
           <ul id="alertList" class="alert-list"></ul>
         </section>
 
-        <div class="advanced-actions">
-          <label for="tailInput">Tail</label>
-          <input id="tailInput" type="number" value="200" min="20" max="5000">
-          <label for="filterLevel">Level</label>
-          <select id="filterLevel">
-            <option value="">Tutti</option>
-            <option value="DEBUG">DEBUG</option>
-            <option value="INFO">INFO</option>
-            <option value="WARN">WARN</option>
-            <option value="ERROR">ERROR</option>
-            <option value="CRITICAL">CRITICAL</option>
-          </select>
-          <label for="filterEvent">Event</label>
-          <select id="filterEvent">
-            <option value="">Tutti</option>
-          </select>
-          <label for="filterChannel">Channel</label>
-          <select id="filterChannel">
-            <option value="">Tutti</option>
-            <option value="stdout">STDOUT</option>
-            <option value="stderr">STDERR</option>
-          </select>
-          <label for="filterSource">Source</label>
-          <select id="filterSource">
-            <option value="">Tutte</option>
-          </select>
-          <input id="filterText" type="text" placeholder="cerca testo/evento/metadati">
-          <button id="applyFilterBtn">Applica Filtri</button>
-          <button id="clearFilterBtn">Reset Filtri</button>
-          <button id="clearLogsBtn" class="btn-warn">Pulisci Log</button>
-          <button id="loadBtn">Ricarica Log</button>
-          <button id="streamBtn">Start Stream</button>
-          <button id="stopBtn">Stop Stream</button>
+        <div class="advanced-toolbar">
+          <div class="advanced-actions advanced-actions-filters">
+            <label for="tailInput">Tail</label>
+            <input id="tailInput" type="number" value="200" min="20" max="5000">
+            <label for="filterLevel">Level</label>
+            <select id="filterLevel">
+              <option value="">Tutti</option>
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO">INFO</option>
+              <option value="WARN">WARN</option>
+              <option value="ERROR">ERROR</option>
+              <option value="CRITICAL">CRITICAL</option>
+            </select>
+            <label for="filterEvent">Event</label>
+            <select id="filterEvent">
+              <option value="">Tutti</option>
+            </select>
+            <label for="filterChannel">Channel</label>
+            <select id="filterChannel">
+              <option value="">Tutti</option>
+              <option value="stdout">STDOUT</option>
+              <option value="stderr">STDERR</option>
+            </select>
+            <label for="filterSource">Source</label>
+            <select id="filterSource">
+              <option value="">Tutte</option>
+            </select>
+            <input id="filterText" type="text" placeholder="cerca testo/evento/metadati">
+          </div>
+          <div class="advanced-actions advanced-actions-buttons">
+            <button id="applyFilterBtn">Applica Filtri</button>
+            <button id="clearFilterBtn">Reset Filtri</button>
+            <button id="clearLogsBtn" class="btn-warn">Pulisci Log</button>
+            <button id="loadBtn">Ricarica Log</button>
+            <button id="streamBtn">Start Stream</button>
+            <button id="stopBtn">Stop Stream</button>
+          </div>
         </div>
 
         <div class="log-pane">
@@ -112,7 +116,7 @@
       <section id="advancedInspectorView" class="advanced-view hidden">
         <section id="queryPanel" class="query-panel hidden">
           <div class="query-panel-header">
-            <h3>Query Inspector (DB)</h3>
+            <h3 id="queryPanelTitle">Query Inspector (DB)</h3>
             <button id="reloadQueriesBtn">Ricarica Query</button>
           </div>
           <div class="query-pane">
@@ -133,7 +137,7 @@
 
         <section id="activityPanel" class="query-panel hidden">
           <div class="query-panel-header">
-            <h3>Activity</h3>
+            <h3 id="activityPanelTitle">Activity</h3>
             <button id="reloadActivityBtn">Ricarica Activity</button>
           </div>
           <div class="query-pane">
