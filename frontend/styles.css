@@ -548,6 +548,27 @@ button:disabled {
   gap: 10px;
 }
 
+.option-group {
+  border: 1px solid #26425f;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.22);
+  padding: 10px;
+}
+
+.option-group-title {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.option-group-description {
+  margin-bottom: 8px;
+}
+
+.option-group-body {
+  display: grid;
+  gap: 10px;
+}
+
 .option-row {
   display: grid;
   gap: 6px;
@@ -718,18 +739,23 @@ tbody td {
   width: 34%;
 }
 
-.query-pane th:nth-child(1),
-.query-pane td:nth-child(1) {
+#queryPanel .query-pane th:nth-child(1),
+#queryPanel .query-pane td:nth-child(1) {
   width: 92px;
 }
 
-.query-pane th:nth-child(2),
-.query-pane td:nth-child(2) {
-  width: 170px;
+#queryPanel .query-pane th:nth-child(2),
+#queryPanel .query-pane td:nth-child(2) {
+  width: 150px;
 }
 
-.query-pane th:nth-child(3),
-.query-pane td:nth-child(3) {
+#queryPanel .query-pane th:nth-child(3),
+#queryPanel .query-pane td:nth-child(3) {
+  width: 112px;
+}
+
+#queryPanel .query-pane th:nth-child(4),
+#queryPanel .query-pane td:nth-child(4) {
   width: 72px;
 }
 

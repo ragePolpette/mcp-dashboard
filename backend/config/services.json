@@ -614,6 +614,7 @@
       "group": "runtime",
       "capabilities": [
         "logs",
+        "activity",
         "alerts",
         "runtime_options",
         "health_details"
