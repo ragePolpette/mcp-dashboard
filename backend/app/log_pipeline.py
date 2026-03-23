@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from datetime import datetime
 from dataclasses import asdict
 from pathlib import Path
@@ -33,6 +34,18 @@ class LogPipeline:
 
     def __init__(self, rule_engine: LogRuleEngine):
         self.rule_engine = rule_engine
+        self._tail_cache: dict[tuple[str, int], dict] = {}
+        self._cache_lock = threading.Lock()
+
+    def _sources_signature(self, service: ServiceDefinition) -> tuple:
+        signature: list[tuple[str, bool, int | None, int | None]] = []
+        for source in service.log_sources:
+            try:
+                stat = source.path.stat()
+                signature.append((str(source.path), True, stat.st_size, stat.st_mtime_ns))
+            except OSError:
+                signature.append((str(source.path), False, None, None))
+        return tuple(signature)
 
     def prune_old_logs(self, services: list[ServiceDefinition], *, retention_days: int = DEFAULT_LOG_RETENTION_DAYS) -> list[str]:
         if retention_days <= 0:
@@ -133,6 +146,13 @@ class LogPipeline:
         return entry
 
     def read_tail(self, service: ServiceDefinition, tail: int) -> list[dict]:
+        cache_key = (service.service_id, int(tail))
+        signature = self._sources_signature(service)
+        with self._cache_lock:
+            cached = self._tail_cache.get(cache_key)
+            if cached and cached.get("signature") == signature:
+                return list(cached["entries"])
+
         entries: list[dict] = []
         for source in service.log_sources:
             fallback_timestamp = None
@@ -148,6 +168,12 @@ class LogPipeline:
                     fallback_timestamp=fallback_timestamp,
                 )
                 entries.append(asdict(parsed))
+
+        with self._cache_lock:
+            self._tail_cache[cache_key] = {
+                "signature": signature,
+                "entries": list(entries),
+            }
         return entries
 
     async def stream_entries(self, service: ServiceDefinition, poll_seconds: float = 0.5) -> AsyncIterator[dict]:
