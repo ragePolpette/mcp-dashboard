@@ -1546,8 +1546,85 @@ async function loadVaultState() {
     initialized: Boolean(payload.initialized),
     unlocked: Boolean(payload.unlocked),
     entry_count: Number(payload.entry_count || 0),
-    entries: Array.isArray(payload.entries) ? payload.entries : []
+    entries: Array.isArray(payload.entries) ? payload.entries : [],
+    ref_usage: payload.ref_usage && typeof payload.ref_usage === "object" ? payload.ref_usage : {}
   };
+}
+
+function setSettingsFlash(message, kind = "info", ref = "") {
+  settingsFlashState = {
+    message: String(message || ""),
+    kind: String(kind || "info"),
+    ref: String(ref || "")
+  };
+  renderSettingsFlash();
+}
+
+function clearSettingsFlash() {
+  settingsFlashState = null;
+  renderSettingsFlash();
+}
+
+function renderSettingsFlash() {
+  if (!settingsFlash) {
+    return;
+  }
+  if (!settingsFlashState || !settingsFlashState.message) {
+    settingsFlash.className = "settings-flash hidden";
+    settingsFlash.innerHTML = "";
+    return;
+  }
+  const tone = settingsFlashState.kind || "info";
+  settingsFlash.className = `settings-flash settings-flash-${tone}`;
+  const refBlock = settingsFlashState.ref
+    ? `<div class="settings-flash-ref"><code>${settingsFlashState.ref}</code><button type="button" data-settings-copy-ref="${settingsFlashState.ref}">Copia ref</button></div>`
+    : "";
+  settingsFlash.innerHTML = `
+    <div class="settings-flash-message">${settingsFlashState.message}</div>
+    ${refBlock}
+  `;
+  const copyBtn = settingsFlash.querySelector("[data-settings-copy-ref]");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      await copyToClipboard(settingsFlashState.ref);
+      setSettingsFlash("Ref copiato negli appunti.", "success", settingsFlashState.ref);
+    });
+  }
+}
+
+function setSettingsTab(tabId) {
+  settingsActiveTab = ["services", "dashboard", "vault"].includes(tabId) ? tabId : "services";
+  const isServices = settingsActiveTab === "services";
+  const isDashboard = settingsActiveTab === "dashboard";
+  const isVault = settingsActiveTab === "vault";
+
+  settingsServicesTabBtn.classList.toggle("active", isServices);
+  settingsServicesTabBtn.setAttribute("aria-selected", String(isServices));
+  settingsDashboardTabBtn.classList.toggle("active", isDashboard);
+  settingsDashboardTabBtn.setAttribute("aria-selected", String(isDashboard));
+  settingsVaultTabBtn.classList.toggle("active", isVault);
+  settingsVaultTabBtn.setAttribute("aria-selected", String(isVault));
+
+  settingsServicesView.classList.toggle("hidden", !isServices);
+  settingsDashboardView.classList.toggle("hidden", !isDashboard);
+  settingsVaultView.classList.toggle("hidden", !isVault);
+}
+
+async function copyToClipboard(text) {
+  const value = String(text || "");
+  if (!value) {
+    return;
+  }
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  document.body.appendChild(input);
+  input.select();
+  document.execCommand("copy");
+  document.body.removeChild(input);
 }
 
 function renderVaultPanel() {
@@ -1557,12 +1634,12 @@ function renderVaultPanel() {
 
   const statusBits = [
     `Stato: ${vaultState.initialized ? (vaultState.unlocked ? "Unlocked" : "Locked") : "Non inizializzato"}`,
-    `Secret: ${vaultState.entry_count || 0}`
+    `Secret salvati: ${vaultState.entry_count || 0}`
   ];
   vaultStatusCard.innerHTML = `
     <div class="vault-status-title">Vault locale</div>
     <div class="vault-status-meta">${statusBits.join(" | ")}</div>
-    <div class="vault-status-hint">I valori restano cifrati su disco; i servizi usano solo il riferimento ${"`vault://...`"} nelle opzioni avanzate.</div>
+    <div class="vault-status-hint">I secret restano cifrati su disco. Dopo un restart dashboard non devi reinserirli: basta sbloccare il vault e i riferimenti ${"`vault://...`"} tornano utilizzabili nelle opzioni MCP.</div>
   `;
 
   if (!vaultState.initialized) {
@@ -1590,42 +1667,55 @@ function renderVaultPanel() {
     const tools = document.createElement("div");
     tools.className = "vault-tool-stack";
     tools.innerHTML = `
-      <div class="vault-inline-form">
+      <div class="vault-inline-form vault-inline-form-wide">
         <input id="vaultEntryRef" type="text" placeholder="es. db.prod.connection_string">
         <input id="vaultEntryValue" type="password" placeholder="valore secret" autocomplete="new-password">
         <button id="vaultSaveEntryBtn" class="btn-ok">Salva Secret</button>
         <button id="vaultLockBtn">Lock Vault</button>
       </div>
-      <div class="option-hint">Aggiorna o crea una chiave vault; il valore non verra' mai mostrato di nuovo in chiaro.</div>
+      <div class="option-hint">Inserisci un nome logico, salva la chiave e usa poi il ref mostrato sotto o nella lista. Il valore non verra' mai mostrato di nuovo in chiaro.</div>
     `;
     vaultControls.appendChild(tools);
     tools.querySelector("#vaultSaveEntryBtn").addEventListener("click", saveVaultEntry);
     tools.querySelector("#vaultLockBtn").addEventListener("click", lockVault);
   }
 
-  if (!vaultState.entries.length) {
-    const empty = document.createElement("div");
-    empty.className = "muted";
-    empty.textContent = "Nessun secret salvato nel vault.";
-    vaultEntries.appendChild(empty);
-    return;
-  }
-
   const list = document.createElement("div");
   list.className = "vault-entry-list";
-  for (const entry of vaultState.entries) {
-    const row = document.createElement("div");
-    row.className = "vault-entry-row";
-    row.innerHTML = `
-      <div>
-        <div class="vault-entry-ref">${entry.ref}</div>
-        <div class="vault-entry-meta">Aggiornato ${formatTimestamp(entry.updated_at) || "n/d"}</div>
-      </div>
-      <button class="btn-warn" data-vault-delete="${entry.ref}">Elimina</button>
-    `;
-    row.querySelector("[data-vault-delete]").addEventListener("click", () => deleteVaultEntry(entry.ref));
-    list.appendChild(row);
+
+  if (!vaultState.entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted vault-empty-state";
+    empty.textContent = vaultState.unlocked ? "Nessun secret salvato nel vault." : "Sblocca il vault per gestire e usare i riferimenti salvati.";
+    list.appendChild(empty);
+  } else {
+    for (const entry of vaultState.entries) {
+      const usage = Array.isArray(vaultState.ref_usage?.[entry.ref]) ? vaultState.ref_usage[entry.ref] : [];
+      const usageText = usage.length
+        ? `Usato da ${usage.length} opzione${usage.length === 1 ? "" : "i"}: ${usage.map(item => `${item.service_id}.${item.option_id}`).join(", ")}`
+        : "Non ancora referenziato da nessun servizio.";
+      const row = document.createElement("div");
+      row.className = "vault-entry-row";
+      row.innerHTML = `
+        <div class="vault-entry-main">
+          <div class="vault-entry-ref">${entry.ref}</div>
+          <div class="vault-entry-meta">Aggiornato ${formatTimestamp(entry.updated_at) || "n/d"}</div>
+          <div class="vault-entry-usage">${usageText}</div>
+        </div>
+        <div class="vault-entry-actions">
+          <button type="button" data-vault-copy="${entry.ref}">Copia ref</button>
+          <button type="button" class="btn-warn" data-vault-delete="${entry.ref}">Elimina</button>
+        </div>
+      `;
+      row.querySelector("[data-vault-copy]").addEventListener("click", async () => {
+        await copyToClipboard(entry.ref);
+        setSettingsFlash("Ref copiato negli appunti.", "success", entry.ref);
+      });
+      row.querySelector("[data-vault-delete]").addEventListener("click", () => deleteVaultEntry(entry.ref));
+      list.appendChild(row);
+    }
   }
+
   vaultEntries.appendChild(list);
 }
 
@@ -1643,6 +1733,7 @@ async function initializeVault() {
   });
   await loadVaultState();
   renderVaultPanel();
+  setSettingsFlash("Vault inizializzato e sbloccato.", "success");
   if (advancedServiceId) {
     await loadServiceOptions(advancedServiceId);
     renderOptionsForm(advancedServiceId);
@@ -1663,6 +1754,7 @@ async function unlockVault() {
   });
   await loadVaultState();
   renderVaultPanel();
+  setSettingsFlash("Vault sbloccato. I riferimenti salvati sono di nuovo utilizzabili.", "success");
   if (advancedServiceId) {
     await loadServiceOptions(advancedServiceId);
     renderOptionsForm(advancedServiceId);
@@ -1673,6 +1765,7 @@ async function lockVault() {
   await apiJson("/api/vault/lock", { method: "POST" });
   await loadVaultState();
   renderVaultPanel();
+  setSettingsFlash("Vault bloccato.", "info");
   if (advancedServiceId) {
     await loadServiceOptions(advancedServiceId);
     renderOptionsForm(advancedServiceId);
@@ -1688,31 +1781,49 @@ async function saveVaultEntry() {
     window.alert("Inserisci sia il riferimento sia il valore del secret.");
     return;
   }
-  await apiJson("/api/vault/entries", {
+  const payload = await apiJson("/api/vault/entries", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ref, value })
   });
+  vaultState = {
+    initialized: Boolean(payload.vault?.initialized),
+    unlocked: Boolean(payload.vault?.unlocked),
+    entry_count: Number(payload.vault?.entry_count || 0),
+    entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : vaultState.entries,
+    ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
+  };
+  const normalizedRef = String(payload.entry?.ref || ref).trim();
   if (refInput) {
-    refInput.value = "";
+    refInput.value = normalizedRef;
   }
   if (valueInput) {
     valueInput.value = "";
   }
-  await loadVaultState();
   renderVaultPanel();
+  setSettingsFlash("Secret salvato nel vault.", "success", normalizedRef);
   if (advancedServiceId) {
+    await loadServiceOptions(advancedServiceId);
     renderOptionsForm(advancedServiceId);
   }
 }
 
 async function deleteVaultEntry(ref) {
-  if (!window.confirm(`Eliminare ${ref} dal vault?`)) {
+  const usage = Array.isArray(vaultState.ref_usage?.[ref]) ? vaultState.ref_usage[ref] : [];
+  const suffix = usage.length ? `\n\nAttenzione: il ref e' usato da ${usage.map(item => `${item.service_id}.${item.option_id}`).join(", ")}` : "";
+  if (!window.confirm(`Eliminare ${ref} dal vault?${suffix}`)) {
     return;
   }
-  await apiJson(`/api/vault/entries?ref=${encodeURIComponent(ref)}`, { method: "DELETE" });
-  await loadVaultState();
+  const payload = await apiJson(`/api/vault/entries?ref=${encodeURIComponent(ref)}`, { method: "DELETE" });
+  vaultState = {
+    initialized: Boolean(payload.vault?.initialized),
+    unlocked: Boolean(payload.vault?.unlocked),
+    entry_count: Number(payload.vault?.entry_count || 0),
+    entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : [],
+    ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
+  };
   renderVaultPanel();
+  setSettingsFlash("Secret eliminato dal vault.", "success");
   if (advancedServiceId) {
     await loadServiceOptions(advancedServiceId);
     renderOptionsForm(advancedServiceId);
@@ -1861,7 +1972,9 @@ function renderSettingsPanel() {
     settingsPreferencesForm.appendChild(row);
   }
 
+  renderSettingsFlash();
   renderVaultPanel();
+  setSettingsTab(settingsActiveTab);
 }
 
 function collectDashboardSettingsPayload() {
@@ -1923,6 +2036,7 @@ async function saveDashboardSettings() {
     await loadServices();
     await refreshDashboardOverview({ tail: 2000, recentCount: 1 });
     renderSettingsPanel();
+    setSettingsFlash("Impostazioni dashboard salvate.", "success");
     renderCards();
   } catch (error) {
     window.alert(`Errore salvataggio impostazioni: ${error.message}`);
@@ -1941,6 +2055,8 @@ async function toggleSettingsPanel(forceOpen = null) {
       console.error("Load vault failed", error);
     }
     renderSettingsPanel();
+  } else {
+    clearSettingsFlash();
   }
 }
 
@@ -2667,6 +2783,9 @@ refreshAllBtn.addEventListener("click", () => refreshAll(currentRecentRowsLimit(
 killAllBtn.addEventListener("click", killEmAll);
 settingsFab.addEventListener("click", () => toggleSettingsPanel());
 closeSettingsBtn.addEventListener("click", () => toggleSettingsPanel(false));
+settingsServicesTabBtn.addEventListener("click", () => setSettingsTab("services"));
+settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
+settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
 saveSettingsBtn.addEventListener("click", saveDashboardSettings);
 reloadAlertsBtn.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsAlerts(advancedServiceId)) {
@@ -2709,7 +2828,8 @@ async function boot() {
   }
 
   renderSettingsPanel();
-  renderCards();
+    setSettingsFlash("Impostazioni dashboard salvate.", "success");
+    renderCards();
 
   try {
     await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
@@ -2723,4 +2843,14 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
+
+
+
+
+
+
+
+
+
+
 

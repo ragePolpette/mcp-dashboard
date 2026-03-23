@@ -412,3 +412,23 @@ class ServiceOptionsManager:
                 self._save()
 
         return changed
+
+    def secret_ref_usage(self) -> dict[str, list[dict[str, str]]]:
+        usage: dict[str, list[dict[str, str]]] = {}
+        with self._lock:
+            for service_id, service_state in self._state.items():
+                if not isinstance(service_state, dict):
+                    continue
+                for option_id, value in service_state.items():
+                    if not isinstance(value, dict) or value.get("source") != "vault":
+                        continue
+                    ref = value.get("ref")
+                    if not isinstance(ref, str) or not ref.strip():
+                        continue
+                    usage.setdefault(ref, []).append(
+                        {
+                            "service_id": service_id,
+                            "option_id": option_id,
+                        }
+                    )
+        return usage

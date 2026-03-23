@@ -522,7 +522,7 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
 
 @app.get("/api/vault")
 def vault_status() -> dict[str, Any]:
-    return vault_manager.status()
+    return {**vault_manager.status(), "ref_usage": options_manager.secret_ref_usage()}
 
 
 @app.post("/api/vault/init")
@@ -555,7 +555,7 @@ def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
     return {
         "ok": True,
         "entry": entry,
-        "vault": vault_manager.status(),
+        "vault": {**vault_manager.status(), "ref_usage": options_manager.secret_ref_usage()},
     }
 
 
@@ -567,7 +567,7 @@ def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=exc.message) from exc
     return {
         "ok": True,
-        "vault": status,
+        "vault": {**status, "ref_usage": options_manager.secret_ref_usage()},
     }
 
 
@@ -804,3 +804,6 @@ async def stream_logs(service_id: str) -> StreamingResponse:
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+
+
+
