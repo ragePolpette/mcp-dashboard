@@ -442,6 +442,80 @@ button:disabled {
   gap: 10px;
 }
 
+.vault-panel {
+  margin-top: 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.vault-status-card {
+  border: 1px solid #254261;
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(8, 17, 28, 0.25);
+}
+
+.vault-status-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.vault-status-meta {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.vault-status-hint {
+  margin-top: 6px;
+  color: #c6d5e4;
+  font-size: 0.82rem;
+}
+
+.vault-controls,
+.vault-entries {
+  display: grid;
+  gap: 10px;
+}
+
+.vault-inline-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+  align-items: center;
+}
+
+.vault-tool-stack {
+  display: grid;
+  gap: 6px;
+}
+
+.vault-entry-list {
+  display: grid;
+  gap: 8px;
+}
+
+.vault-entry-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #254261;
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(8, 17, 28, 0.25);
+}
+
+.vault-entry-ref {
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.vault-entry-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-top: 2px;
+}
+
 .settings-row {
   display: grid;
   gap: 6px;
@@ -671,6 +745,16 @@ button:disabled {
 .option-hint {
   font-size: 0.82rem;
   color: var(--muted);
+}
+
+.secret-source-select,
+.secret-option-body {
+  width: 100%;
+}
+
+.secret-option-body {
+  display: grid;
+  gap: 8px;
 }
 
 .muted {

@@ -8,6 +8,9 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const settingsServicesList = document.getElementById("settingsServicesList");
 const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
+const vaultStatusCard = document.getElementById("vaultStatusCard");
+const vaultControls = document.getElementById("vaultControls");
+const vaultEntries = document.getElementById("vaultEntries");
 
 const advancedPanel = document.getElementById("advancedPanel");
 const advancedTitle = document.getElementById("advancedTitle");
@@ -64,6 +67,12 @@ let dashboardSettings = {
     recent_rows_limit: 30
   },
   service_visibility: {}
+};
+let vaultState = {
+  initialized: false,
+  unlocked: false,
+  entry_count: 0,
+  entries: []
 };
 let refreshTimer = null;
 let cardRenderTimer = null;
@@ -1130,8 +1139,9 @@ function createOptionRow(opt) {
   badges.className = "option-badges";
 
   const persistenceBadge = document.createElement("span");
-  persistenceBadge.className = `option-badge ${opt.secret ? "option-badge-runtime" : "option-badge-persisted"}`;
-  persistenceBadge.textContent = opt.secret ? "Runtime only" : "Persisted";
+  const isVaultSource = opt.secret && opt.secret_source === "vault";
+  persistenceBadge.className = `option-badge ${opt.secret && !isVaultSource ? "option-badge-runtime" : "option-badge-persisted"}`;
+  persistenceBadge.textContent = opt.secret ? (isVaultSource ? "Ref persisted" : "Runtime only") : "Persisted";
   badges.appendChild(persistenceBadge);
 
   if (opt.secret) {
@@ -1143,6 +1153,76 @@ function createOptionRow(opt) {
 
   const hint = document.createElement("div");
   hint.className = "option-hint";
+
+  if (opt.secret) {
+    row.dataset.secretOption = "true";
+    row.dataset.optionId = opt.id;
+    row.dataset.optionType = opt.type;
+
+    const sourceSelect = document.createElement("select");
+    sourceSelect.dataset.optionSource = opt.id;
+    sourceSelect.className = "secret-source-select";
+    sourceSelect.innerHTML = `
+      <option value="session">Sessione corrente</option>
+      <option value="vault">Vault reference</option>
+    `;
+    sourceSelect.value = opt.secret_source === "vault" ? "vault" : "session";
+
+    const secretBody = document.createElement("div");
+    secretBody.className = "secret-option-body";
+
+    const sessionInput = document.createElement("input");
+    sessionInput.type = "password";
+    sessionInput.autocomplete = "new-password";
+    sessionInput.spellcheck = false;
+    sessionInput.dataset.optionSessionValue = opt.id;
+    sessionInput.placeholder = opt.is_set && opt.secret_source === "session" ? "******** (già impostata)" : "inserisci valore";
+
+    const vaultSelect = document.createElement("select");
+    vaultSelect.dataset.optionVaultRef = opt.id;
+    const currentRef = opt.vault_ref || "";
+    const refs = [...new Set((vaultState.entries || []).map(entry => entry.ref).concat(currentRef ? [currentRef] : []))].sort();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = refs.length ? "seleziona riferimento vault" : "nessun ref nel vault";
+    vaultSelect.appendChild(placeholder);
+    for (const ref of refs) {
+      const option = document.createElement("option");
+      option.value = ref;
+      option.textContent = ref;
+      if (currentRef === ref) {
+        option.selected = true;
+      }
+      vaultSelect.appendChild(option);
+    }
+
+    const updateSecretMode = () => {
+      const useVault = sourceSelect.value === "vault";
+      sessionInput.classList.toggle("hidden", useVault);
+      vaultSelect.classList.toggle("hidden", !useVault);
+    };
+    sourceSelect.addEventListener("change", updateSecretMode);
+    updateSecretMode();
+
+    const sourceHint = document.createElement("div");
+    sourceHint.className = "option-hint";
+    sourceHint.textContent = opt.status_message || opt.description || "";
+
+    hint.textContent = opt.description || "";
+    header.append(label, badges);
+    row.appendChild(header);
+    row.appendChild(sourceSelect);
+    secretBody.appendChild(sessionInput);
+    secretBody.appendChild(vaultSelect);
+    row.appendChild(secretBody);
+    if (sourceHint.textContent) {
+      row.appendChild(sourceHint);
+    }
+    if (hint.textContent && hint.textContent !== sourceHint.textContent) {
+      row.appendChild(hint);
+    }
+    return row;
+  }
 
   let input;
   if (opt.type === "boolean") {
@@ -1460,6 +1540,185 @@ async function loadDashboardSettings() {
   tailInput.value = String(currentRecentRowsLimit());
 }
 
+async function loadVaultState() {
+  const payload = await apiJson("/api/vault");
+  vaultState = {
+    initialized: Boolean(payload.initialized),
+    unlocked: Boolean(payload.unlocked),
+    entry_count: Number(payload.entry_count || 0),
+    entries: Array.isArray(payload.entries) ? payload.entries : []
+  };
+}
+
+function renderVaultPanel() {
+  vaultStatusCard.innerHTML = "";
+  vaultControls.innerHTML = "";
+  vaultEntries.innerHTML = "";
+
+  const statusBits = [
+    `Stato: ${vaultState.initialized ? (vaultState.unlocked ? "Unlocked" : "Locked") : "Non inizializzato"}`,
+    `Secret: ${vaultState.entry_count || 0}`
+  ];
+  vaultStatusCard.innerHTML = `
+    <div class="vault-status-title">Vault locale</div>
+    <div class="vault-status-meta">${statusBits.join(" | ")}</div>
+    <div class="vault-status-hint">I valori restano cifrati su disco; i servizi usano solo il riferimento ${"`vault://...`"} nelle opzioni avanzate.</div>
+  `;
+
+  if (!vaultState.initialized) {
+    const row = document.createElement("div");
+    row.className = "vault-inline-form";
+    row.innerHTML = `
+      <input id="vaultInitPassphrase" type="password" placeholder="passphrase vault (min 12 caratteri)" autocomplete="new-password">
+      <button id="vaultInitBtn" class="btn-ok">Inizializza Vault</button>
+    `;
+    vaultControls.appendChild(row);
+    row.querySelector("#vaultInitBtn").addEventListener("click", initializeVault);
+    return;
+  }
+
+  if (!vaultState.unlocked) {
+    const row = document.createElement("div");
+    row.className = "vault-inline-form";
+    row.innerHTML = `
+      <input id="vaultUnlockPassphrase" type="password" placeholder="passphrase vault" autocomplete="current-password">
+      <button id="vaultUnlockBtn" class="btn-ok">Unlock Vault</button>
+    `;
+    vaultControls.appendChild(row);
+    row.querySelector("#vaultUnlockBtn").addEventListener("click", unlockVault);
+  } else {
+    const tools = document.createElement("div");
+    tools.className = "vault-tool-stack";
+    tools.innerHTML = `
+      <div class="vault-inline-form">
+        <input id="vaultEntryRef" type="text" placeholder="es. db.prod.connection_string">
+        <input id="vaultEntryValue" type="password" placeholder="valore secret" autocomplete="new-password">
+        <button id="vaultSaveEntryBtn" class="btn-ok">Salva Secret</button>
+        <button id="vaultLockBtn">Lock Vault</button>
+      </div>
+      <div class="option-hint">Aggiorna o crea una chiave vault; il valore non verra' mai mostrato di nuovo in chiaro.</div>
+    `;
+    vaultControls.appendChild(tools);
+    tools.querySelector("#vaultSaveEntryBtn").addEventListener("click", saveVaultEntry);
+    tools.querySelector("#vaultLockBtn").addEventListener("click", lockVault);
+  }
+
+  if (!vaultState.entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "muted";
+    empty.textContent = "Nessun secret salvato nel vault.";
+    vaultEntries.appendChild(empty);
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "vault-entry-list";
+  for (const entry of vaultState.entries) {
+    const row = document.createElement("div");
+    row.className = "vault-entry-row";
+    row.innerHTML = `
+      <div>
+        <div class="vault-entry-ref">${entry.ref}</div>
+        <div class="vault-entry-meta">Aggiornato ${formatTimestamp(entry.updated_at) || "n/d"}</div>
+      </div>
+      <button class="btn-warn" data-vault-delete="${entry.ref}">Elimina</button>
+    `;
+    row.querySelector("[data-vault-delete]").addEventListener("click", () => deleteVaultEntry(entry.ref));
+    list.appendChild(row);
+  }
+  vaultEntries.appendChild(list);
+}
+
+async function initializeVault() {
+  const input = document.getElementById("vaultInitPassphrase");
+  const passphrase = String(input?.value || "");
+  if (passphrase.length < 12) {
+    window.alert("La passphrase del vault deve avere almeno 12 caratteri.");
+    return;
+  }
+  await apiJson("/api/vault/init", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ passphrase })
+  });
+  await loadVaultState();
+  renderVaultPanel();
+  if (advancedServiceId) {
+    await loadServiceOptions(advancedServiceId);
+    renderOptionsForm(advancedServiceId);
+  }
+}
+
+async function unlockVault() {
+  const input = document.getElementById("vaultUnlockPassphrase");
+  const passphrase = String(input?.value || "");
+  if (!passphrase) {
+    window.alert("Inserisci la passphrase del vault.");
+    return;
+  }
+  await apiJson("/api/vault/unlock", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ passphrase })
+  });
+  await loadVaultState();
+  renderVaultPanel();
+  if (advancedServiceId) {
+    await loadServiceOptions(advancedServiceId);
+    renderOptionsForm(advancedServiceId);
+  }
+}
+
+async function lockVault() {
+  await apiJson("/api/vault/lock", { method: "POST" });
+  await loadVaultState();
+  renderVaultPanel();
+  if (advancedServiceId) {
+    await loadServiceOptions(advancedServiceId);
+    renderOptionsForm(advancedServiceId);
+  }
+}
+
+async function saveVaultEntry() {
+  const refInput = document.getElementById("vaultEntryRef");
+  const valueInput = document.getElementById("vaultEntryValue");
+  const ref = String(refInput?.value || "");
+  const value = String(valueInput?.value || "");
+  if (!ref.trim() || !value) {
+    window.alert("Inserisci sia il riferimento sia il valore del secret.");
+    return;
+  }
+  await apiJson("/api/vault/entries", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ref, value })
+  });
+  if (refInput) {
+    refInput.value = "";
+  }
+  if (valueInput) {
+    valueInput.value = "";
+  }
+  await loadVaultState();
+  renderVaultPanel();
+  if (advancedServiceId) {
+    renderOptionsForm(advancedServiceId);
+  }
+}
+
+async function deleteVaultEntry(ref) {
+  if (!window.confirm(`Eliminare ${ref} dal vault?`)) {
+    return;
+  }
+  await apiJson(`/api/vault/entries?ref=${encodeURIComponent(ref)}`, { method: "DELETE" });
+  await loadVaultState();
+  renderVaultPanel();
+  if (advancedServiceId) {
+    await loadServiceOptions(advancedServiceId);
+    renderOptionsForm(advancedServiceId);
+  }
+}
+
 function renderSettingsPanel() {
   settingsServicesList.innerHTML = "";
   settingsPreferencesForm.innerHTML = "";
@@ -1601,6 +1860,8 @@ function renderSettingsPanel() {
 
     settingsPreferencesForm.appendChild(row);
   }
+
+  renderVaultPanel();
 }
 
 function collectDashboardSettingsPayload() {
@@ -1670,10 +1931,15 @@ async function saveDashboardSettings() {
   }
 }
 
-function toggleSettingsPanel(forceOpen = null) {
+async function toggleSettingsPanel(forceOpen = null) {
   const shouldOpen = forceOpen === null ? settingsPanel.classList.contains("hidden") : Boolean(forceOpen);
   settingsPanel.classList.toggle("hidden", !shouldOpen);
   if (shouldOpen) {
+    try {
+      await loadVaultState();
+    } catch (error) {
+      console.error("Load vault failed", error);
+    }
     renderSettingsPanel();
   }
 }
@@ -1898,6 +2164,25 @@ function renderOptionsForm(serviceId) {
 
 function collectOptionsFromForm() {
   const values = {};
+  for (const row of optionsForm.querySelectorAll("[data-secret-option='true']")) {
+    const optionId = row.dataset.optionId;
+    if (!optionId) {
+      continue;
+    }
+    const source = row.querySelector(`[data-option-source="${optionId}"]`)?.value || "session";
+    if (source === "vault") {
+      const ref = row.querySelector(`[data-option-vault-ref="${optionId}"]`)?.value || "";
+      if (String(ref).trim()) {
+        values[optionId] = { source: "vault", ref };
+      }
+      continue;
+    }
+    const value = row.querySelector(`[data-option-session-value="${optionId}"]`)?.value ?? "";
+    if (String(value).trim()) {
+      values[optionId] = { source: "session", value };
+    }
+  }
+
   const inputs = optionsForm.querySelectorAll("[data-option-id]");
   for (const el of inputs) {
     const optionId = el.dataset.optionId;
@@ -2414,7 +2699,7 @@ saveOptionsBtn.addEventListener("click", async () => {
 
 async function boot() {
   await loadServices();
-  await loadDashboardSettings();
+  await Promise.all([loadDashboardSettings(), loadVaultState()]);
   renderSettingsPanel();
   await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
   scheduleAutoRefresh();
