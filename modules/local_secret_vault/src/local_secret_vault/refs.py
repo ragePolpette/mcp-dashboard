@@ -18,7 +18,10 @@ def normalize_ref(ref: str) -> str:
         text = f"{VAULT_SCHEME}{text}"
     name = text[len(VAULT_SCHEME) :].strip()
     if not name or not REF_PATTERN.fullmatch(name):
-        raise LocalSecretVaultError("E_REF_INVALID", "Vault reference contains unsupported characters.")
+        raise LocalSecretVaultError(
+            "E_REF_INVALID",
+            "Nome ref non valido. Usa solo lettere, numeri, punto, underscore, slash, due punti o trattino; niente spazi. Esempio: db.prod.connection_string",
+        )
     return f"{VAULT_SCHEME}{name}"
 
 

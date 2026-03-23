@@ -6,6 +6,13 @@ const settingsFab = document.getElementById("settingsFab");
 const settingsPanel = document.getElementById("settingsPanel");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+const settingsFlash = document.getElementById("settingsFlash");
+const settingsServicesTabBtn = document.getElementById("settingsServicesTabBtn");
+const settingsDashboardTabBtn = document.getElementById("settingsDashboardTabBtn");
+const settingsVaultTabBtn = document.getElementById("settingsVaultTabBtn");
+const settingsServicesView = document.getElementById("settingsServicesView");
+const settingsDashboardView = document.getElementById("settingsDashboardView");
+const settingsVaultView = document.getElementById("settingsVaultView");
 const settingsServicesList = document.getElementById("settingsServicesList");
 const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
 const vaultStatusCard = document.getElementById("vaultStatusCard");
@@ -56,6 +63,8 @@ let advancedServiceId = null;
 let advancedEventSource = null;
 let advancedActiveTab = "options";
 let dashboardStatus = { pid: null };
+let settingsActiveTab = "services";
+let settingsFlashState = null;
 let dashboardSettings = {
   preferences: {
     refresh_interval_sec: 5,
@@ -79,6 +88,7 @@ let cardRenderTimer = null;
 let advancedQueryRefreshTimer = null;
 let advancedActivityRefreshTimer = null;
 let advancedMetricsAlertsTimer = null;
+const LOCAL_VAULT_REF_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
@@ -1164,7 +1174,7 @@ function createOptionRow(opt) {
     sourceSelect.className = "secret-source-select";
     sourceSelect.innerHTML = `
       <option value="session">Sessione corrente</option>
-      <option value="vault">Vault reference</option>
+      <option value="vault">Riferimento Local Vault</option>
     `;
     sourceSelect.value = opt.secret_source === "vault" ? "vault" : "session";
 
@@ -1184,7 +1194,7 @@ function createOptionRow(opt) {
     const refs = [...new Set((vaultState.entries || []).map(entry => entry.ref).concat(currentRef ? [currentRef] : []))].sort();
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = refs.length ? "seleziona riferimento vault" : "nessun ref nel vault";
+    placeholder.textContent = refs.length ? "seleziona riferimento Local Vault" : "nessun ref nel Local Vault";
     vaultSelect.appendChild(placeholder);
     for (const ref of refs) {
       const option = document.createElement("option");
@@ -1637,7 +1647,7 @@ function renderVaultPanel() {
     `Secret salvati: ${vaultState.entry_count || 0}`
   ];
   vaultStatusCard.innerHTML = `
-    <div class="vault-status-title">Vault locale</div>
+    <div class="vault-status-title">Local Vault</div>
     <div class="vault-status-meta">${statusBits.join(" | ")}</div>
     <div class="vault-status-hint">I secret restano cifrati su disco. Dopo un restart dashboard non devi reinserirli: basta sbloccare il vault e i riferimenti ${"`vault://...`"} tornano utilizzabili nelle opzioni MCP.</div>
   `;
@@ -1646,8 +1656,8 @@ function renderVaultPanel() {
     const row = document.createElement("div");
     row.className = "vault-inline-form";
     row.innerHTML = `
-      <input id="vaultInitPassphrase" type="password" placeholder="passphrase vault (min 12 caratteri)" autocomplete="new-password">
-      <button id="vaultInitBtn" class="btn-ok">Inizializza Vault</button>
+      <input id="vaultInitPassphrase" type="password" placeholder="passphrase Local Vault (min 12 caratteri)" autocomplete="new-password">
+      <button id="vaultInitBtn" class="btn-ok">Inizializza Local Vault</button>
     `;
     vaultControls.appendChild(row);
     row.querySelector("#vaultInitBtn").addEventListener("click", initializeVault);
@@ -1658,8 +1668,8 @@ function renderVaultPanel() {
     const row = document.createElement("div");
     row.className = "vault-inline-form";
     row.innerHTML = `
-      <input id="vaultUnlockPassphrase" type="password" placeholder="passphrase vault" autocomplete="current-password">
-      <button id="vaultUnlockBtn" class="btn-ok">Unlock Vault</button>
+      <input id="vaultUnlockPassphrase" type="password" placeholder="passphrase Local Vault" autocomplete="current-password">
+      <button id="vaultUnlockBtn" class="btn-ok">Unlock Local Vault</button>
     `;
     vaultControls.appendChild(row);
     row.querySelector("#vaultUnlockBtn").addEventListener("click", unlockVault);
@@ -1670,10 +1680,10 @@ function renderVaultPanel() {
       <div class="vault-inline-form vault-inline-form-wide">
         <input id="vaultEntryRef" type="text" placeholder="es. db.prod.connection_string">
         <input id="vaultEntryValue" type="password" placeholder="valore secret" autocomplete="new-password">
-        <button id="vaultSaveEntryBtn" class="btn-ok">Salva Secret</button>
-        <button id="vaultLockBtn">Lock Vault</button>
+        <button id="vaultSaveEntryBtn" class="btn-ok">Salva nel Local Vault</button>
+        <button id="vaultLockBtn">Lock Local Vault</button>
       </div>
-      <div class="option-hint">Inserisci un nome logico, salva la chiave e usa poi il ref mostrato sotto o nella lista. Il valore non verra' mai mostrato di nuovo in chiaro.</div>
+      <div class="option-hint">Stai salvando nel Local Vault della dashboard. Inserisci un nome logico, salva la chiave e usa poi il ref mostrato sotto o nella lista. Il valore non verra' mai mostrato di nuovo in chiaro.</div>
     `;
     vaultControls.appendChild(tools);
     tools.querySelector("#vaultSaveEntryBtn").addEventListener("click", saveVaultEntry);
@@ -1686,7 +1696,7 @@ function renderVaultPanel() {
   if (!vaultState.entries.length) {
     const empty = document.createElement("div");
     empty.className = "muted vault-empty-state";
-    empty.textContent = vaultState.unlocked ? "Nessun secret salvato nel vault." : "Sblocca il vault per gestire e usare i riferimenti salvati.";
+    empty.textContent = vaultState.unlocked ? "Nessun secret salvato nel Local Vault." : "Sblocca il Local Vault per gestire e usare i riferimenti salvati.";
     list.appendChild(empty);
   } else {
     for (const entry of vaultState.entries) {
@@ -1726,17 +1736,21 @@ async function initializeVault() {
     window.alert("La passphrase del vault deve avere almeno 12 caratteri.");
     return;
   }
-  await apiJson("/api/vault/init", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passphrase })
-  });
-  await loadVaultState();
-  renderVaultPanel();
-  setSettingsFlash("Vault inizializzato e sbloccato.", "success");
-  if (advancedServiceId) {
-    await loadServiceOptions(advancedServiceId);
-    renderOptionsForm(advancedServiceId);
+  try {
+    await apiJson("/api/vault/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase })
+    });
+    await loadVaultState();
+    renderVaultPanel();
+    setSettingsFlash("Local Vault inizializzato e sbloccato.", "success");
+    if (advancedServiceId) {
+      await loadServiceOptions(advancedServiceId);
+      renderOptionsForm(advancedServiceId);
+    }
+  } catch (error) {
+    setSettingsFlash(`Errore inizializzazione Local Vault: ${error.message}`, "error");
   }
 }
 
@@ -1747,28 +1761,36 @@ async function unlockVault() {
     window.alert("Inserisci la passphrase del vault.");
     return;
   }
-  await apiJson("/api/vault/unlock", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ passphrase })
-  });
-  await loadVaultState();
-  renderVaultPanel();
-  setSettingsFlash("Vault sbloccato. I riferimenti salvati sono di nuovo utilizzabili.", "success");
-  if (advancedServiceId) {
-    await loadServiceOptions(advancedServiceId);
-    renderOptionsForm(advancedServiceId);
+  try {
+    await apiJson("/api/vault/unlock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ passphrase })
+    });
+    await loadVaultState();
+    renderVaultPanel();
+    setSettingsFlash("Local Vault sbloccato. I riferimenti salvati sono di nuovo utilizzabili.", "success");
+    if (advancedServiceId) {
+      await loadServiceOptions(advancedServiceId);
+      renderOptionsForm(advancedServiceId);
+    }
+  } catch (error) {
+    setSettingsFlash(`Errore sblocco Local Vault: ${error.message}`, "error");
   }
 }
 
 async function lockVault() {
-  await apiJson("/api/vault/lock", { method: "POST" });
-  await loadVaultState();
-  renderVaultPanel();
-  setSettingsFlash("Vault bloccato.", "info");
-  if (advancedServiceId) {
-    await loadServiceOptions(advancedServiceId);
-    renderOptionsForm(advancedServiceId);
+  try {
+    await apiJson("/api/vault/lock", { method: "POST" });
+    await loadVaultState();
+    renderVaultPanel();
+    setSettingsFlash("Local Vault bloccato.", "info");
+    if (advancedServiceId) {
+      await loadServiceOptions(advancedServiceId);
+      renderOptionsForm(advancedServiceId);
+    }
+  } catch (error) {
+    setSettingsFlash(`Errore lock Local Vault: ${error.message}`, "error");
   }
 }
 
@@ -1781,52 +1803,68 @@ async function saveVaultEntry() {
     window.alert("Inserisci sia il riferimento sia il valore del secret.");
     return;
   }
-  const payload = await apiJson("/api/vault/entries", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ref, value })
-  });
-  vaultState = {
-    initialized: Boolean(payload.vault?.initialized),
-    unlocked: Boolean(payload.vault?.unlocked),
-    entry_count: Number(payload.vault?.entry_count || 0),
-    entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : vaultState.entries,
-    ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
-  };
-  const normalizedRef = String(payload.entry?.ref || ref).trim();
-  if (refInput) {
-    refInput.value = normalizedRef;
+  const normalizedCandidate = ref.trim().startsWith("vault://") ? ref.trim().slice("vault://".length).trim() : ref.trim();
+  if (!LOCAL_VAULT_REF_NAME_PATTERN.test(normalizedCandidate)) {
+    setSettingsFlash(
+      "Nome ref non valido. Usa solo lettere, numeri, punto, underscore, slash, due punti o trattino; niente spazi. Esempio: db.prod.connection_string",
+      "error"
+    );
+    return;
   }
-  if (valueInput) {
-    valueInput.value = "";
-  }
-  renderVaultPanel();
-  setSettingsFlash("Secret salvato nel vault.", "success", normalizedRef);
-  if (advancedServiceId) {
-    await loadServiceOptions(advancedServiceId);
-    renderOptionsForm(advancedServiceId);
+  try {
+    const payload = await apiJson("/api/vault/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref, value })
+    });
+    vaultState = {
+      initialized: Boolean(payload.vault?.initialized),
+      unlocked: Boolean(payload.vault?.unlocked),
+      entry_count: Number(payload.vault?.entry_count || 0),
+      entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : vaultState.entries,
+      ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
+    };
+    const normalizedRef = String(payload.entry?.ref || ref).trim();
+    if (refInput) {
+      refInput.value = normalizedRef;
+    }
+    if (valueInput) {
+      valueInput.value = "";
+    }
+    renderVaultPanel();
+    setSettingsFlash("Secret salvato nel Local Vault.", "success", normalizedRef);
+    if (advancedServiceId) {
+      await loadServiceOptions(advancedServiceId);
+      renderOptionsForm(advancedServiceId);
+    }
+  } catch (error) {
+    setSettingsFlash(`Errore salvataggio Local Vault: ${error.message}`, "error");
   }
 }
 
 async function deleteVaultEntry(ref) {
   const usage = Array.isArray(vaultState.ref_usage?.[ref]) ? vaultState.ref_usage[ref] : [];
   const suffix = usage.length ? `\n\nAttenzione: il ref e' usato da ${usage.map(item => `${item.service_id}.${item.option_id}`).join(", ")}` : "";
-  if (!window.confirm(`Eliminare ${ref} dal vault?${suffix}`)) {
+  if (!window.confirm(`Eliminare ${ref} dal Local Vault?${suffix}`)) {
     return;
   }
-  const payload = await apiJson(`/api/vault/entries?ref=${encodeURIComponent(ref)}`, { method: "DELETE" });
-  vaultState = {
-    initialized: Boolean(payload.vault?.initialized),
-    unlocked: Boolean(payload.vault?.unlocked),
-    entry_count: Number(payload.vault?.entry_count || 0),
-    entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : [],
-    ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
-  };
-  renderVaultPanel();
-  setSettingsFlash("Secret eliminato dal vault.", "success");
-  if (advancedServiceId) {
-    await loadServiceOptions(advancedServiceId);
-    renderOptionsForm(advancedServiceId);
+  try {
+    const payload = await apiJson(`/api/vault/entries?ref=${encodeURIComponent(ref)}`, { method: "DELETE" });
+    vaultState = {
+      initialized: Boolean(payload.vault?.initialized),
+      unlocked: Boolean(payload.vault?.unlocked),
+      entry_count: Number(payload.vault?.entry_count || 0),
+      entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : [],
+      ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
+    };
+    renderVaultPanel();
+    setSettingsFlash("Secret eliminato dal Local Vault.", "success");
+    if (advancedServiceId) {
+      await loadServiceOptions(advancedServiceId);
+      renderOptionsForm(advancedServiceId);
+    }
+  } catch (error) {
+    setSettingsFlash(`Errore eliminazione Local Vault: ${error.message}`, "error");
   }
 }
 
@@ -2828,8 +2866,6 @@ async function boot() {
   }
 
   renderSettingsPanel();
-    setSettingsFlash("Impostazioni dashboard salvate.", "success");
-    renderCards();
 
   try {
     await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
