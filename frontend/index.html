@@ -42,7 +42,7 @@
             <button id="saveOptionsBtn" class="btn-ok">Salva Opzioni</button>
           </div>
           <p class="muted">Le opzioni vengono applicate al prossimo Start/Restart del servizio.</p>
-          <p class="muted">Le secret restano solo nella memoria della dashboard corrente: puoi fare Restart senza reinserirle finche' la dashboard resta attiva, ma non vengono mai salvate su disco.</p>
+          <p class="muted">Le secret possono restare nella sessione corrente oppure puntare a un riferimento `vault://...` salvato nel vault locale della dashboard.</p>
           <div id="optionsForm" class="options-form"></div>
         </section>
       </section>
@@ -180,6 +180,15 @@
       <section class="settings-section">
         <h3>Dashboard</h3>
         <div id="settingsPreferencesForm" class="settings-form"></div>
+      </section>
+
+      <section class="settings-section">
+        <h3>Vault</h3>
+        <div id="vaultPanel" class="vault-panel">
+          <div id="vaultStatusCard" class="vault-status-card"></div>
+          <div id="vaultControls" class="vault-controls"></div>
+          <div id="vaultEntries" class="vault-entries"></div>
+        </div>
       </section>
     </section>
   </main>
