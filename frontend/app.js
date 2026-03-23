@@ -32,9 +32,11 @@ const streamBtn = document.getElementById("streamBtn");
 const stopBtn = document.getElementById("stopBtn");
 const logBody = document.getElementById("logBody");
 const queryPanel = document.getElementById("queryPanel");
+const queryPanelTitle = document.getElementById("queryPanelTitle");
 const queryBody = document.getElementById("queryBody");
 const reloadQueriesBtn = document.getElementById("reloadQueriesBtn");
 const activityPanel = document.getElementById("activityPanel");
+const activityPanelTitle = document.getElementById("activityPanelTitle");
 const activityBody = document.getElementById("activityBody");
 const reloadActivityBtn = document.getElementById("reloadActivityBtn");
 const alertPanel = document.getElementById("alertPanel");
@@ -469,6 +471,51 @@ function pickDefaultAdvancedTab(service, runtime) {
     return "options";
   }
   return "logs";
+}
+
+function inspectorTabLabel(serviceOrId) {
+  const hasQuery = supportsQueryInspector(serviceOrId);
+  const hasAct = supportsActivity(serviceOrId);
+  if (hasQuery && hasAct) {
+    return "Inspector";
+  }
+  if (hasQuery) {
+    return "Query";
+  }
+  if (hasAct) {
+    return "Activity";
+  }
+  return "Inspector";
+}
+
+function activityPanelHeading(serviceOrId) {
+  const kind = serviceKind(serviceOrId);
+  if (kind === "ops" && String(serviceOrId?.id || serviceOrId) === "llm-bitbucket-mcp") {
+    return "Bitbucket API Activity";
+  }
+  if (kind === "memory") {
+    return "Memory Activity";
+  }
+  if (kind === "rag") {
+    return "Tool Activity";
+  }
+  return "Activity";
+}
+
+function createSummaryCard(label, value) {
+  const card = document.createElement("div");
+  card.className = "advanced-summary-card";
+
+  const cardLabel = document.createElement("div");
+  cardLabel.className = "advanced-summary-label";
+  cardLabel.textContent = label;
+
+  const cardValue = document.createElement("div");
+  cardValue.className = "advanced-summary-value";
+  cardValue.textContent = value || "n/d";
+
+  card.append(cardLabel, cardValue);
+  return card;
 }
 
 function setAdvancedTab(tabName) {
@@ -948,7 +995,20 @@ function renderAlertsForAdvanced(serviceId) {
 
 function optionGroupDefinitions(serviceId) {
   if (serviceId !== "llm-sql-db-mcp") {
-    return null;
+    return [
+      {
+        id: "credentials",
+        title: "Credenziali e Secret",
+        description: "Valori sensibili o token richiesti al bootstrap del servizio.",
+        match: opt => Boolean(opt.secret)
+      },
+      {
+        id: "runtime-behavior",
+        title: "Runtime e comportamento",
+        description: "Flag operativi e policy applicate all'avvio del servizio.",
+        match: opt => !opt.secret
+      }
+    ];
   }
 
   return [
@@ -983,10 +1043,28 @@ function createOptionRow(opt) {
   const row = document.createElement("div");
   row.className = "option-row";
 
+  const header = document.createElement("div");
+  header.className = "option-header";
+
   const label = document.createElement("label");
   label.className = "option-label";
   label.textContent = opt.label || opt.id;
   label.htmlFor = `opt-${opt.id}`;
+
+  const badges = document.createElement("div");
+  badges.className = "option-badges";
+
+  const persistenceBadge = document.createElement("span");
+  persistenceBadge.className = `option-badge ${opt.secret ? "option-badge-runtime" : "option-badge-persisted"}`;
+  persistenceBadge.textContent = opt.secret ? "Runtime only" : "Persisted";
+  badges.appendChild(persistenceBadge);
+
+  if (opt.secret) {
+    const secretBadge = document.createElement("span");
+    secretBadge.className = "option-badge option-badge-secret";
+    secretBadge.textContent = "Secret";
+    badges.appendChild(secretBadge);
+  }
 
   const hint = document.createElement("div");
   hint.className = "option-hint";
@@ -1034,7 +1112,8 @@ function createOptionRow(opt) {
   input.dataset.optionType = opt.type;
   input.dataset.secret = opt.secret ? "true" : "false";
 
-  row.appendChild(label);
+  header.append(label, badges);
+  row.appendChild(header);
   row.appendChild(input);
   if (hint.textContent) {
     row.appendChild(hint);
@@ -1942,9 +2021,27 @@ function renderAdvancedMeta(service) {
   const sourceSummary = (service.log_sources || []).map(source => sourceSummaryLabel(source)).join("; ") || "n/d";
   const contextMode = serviceKind(service) === "rag" ? llmContextModeLabel(runtime) : "";
   const alertText = supportsAlerts(service)
-    ? ` | Alert: ${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0})`
-    : "";
-  advancedMeta.textContent = `Status: ${runtimeText} | Health: ${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""} | Stream: ${streamState}${alertText} | Sources: ${sourceSummary}`;
+    ? `${String(alertPayload.status || "ok").toUpperCase()} (${alertPayload.triggered_count || 0})`
+    : "n/d";
+
+  advancedMeta.innerHTML = "";
+  advancedMeta.appendChild(createSummaryCard("Status", runtimeText));
+  advancedMeta.appendChild(createSummaryCard("Health", `${healthLabel(runtime)}${contextMode ? ` | ${contextMode}` : ""}`));
+  advancedMeta.appendChild(createSummaryCard("Stream", streamState));
+  if (supportsAlerts(service)) {
+    advancedMeta.appendChild(createSummaryCard("Alert", alertText));
+  }
+  advancedMeta.appendChild(createSummaryCard("Sources", sourceSummary));
+}
+
+function renderAdvancedInspectorTitles(service) {
+  tabInspectorBtn.textContent = inspectorTabLabel(service);
+  if (queryPanelTitle) {
+    queryPanelTitle.textContent = "Query Inspector";
+  }
+  if (activityPanelTitle) {
+    activityPanelTitle.textContent = activityPanelHeading(service);
+  }
 }
 
 async function openAdvanced(serviceId) {
@@ -1965,6 +2062,7 @@ async function openAdvanced(serviceId) {
 
   advancedTitle.textContent = `Dettaglio: ${service.name}`;
   renderAdvancedMeta(service);
+  renderAdvancedInspectorTitles(service);
   renderOptionsForm(serviceId);
   advancedPanel.classList.remove("hidden");
   setAdvancedTab(pickDefaultAdvancedTab(service, getRuntimeStatus(serviceId)));
