@@ -66,6 +66,55 @@ def test_services_endpoint_includes_kind_group_and_capabilities(monkeypatch):
     assert payload[0]["capabilities"] == ["logs", "activity", "alerts"]
 
 
+def test_dashboard_overview_returns_runtime_logs_metrics_and_alerts(monkeypatch):
+    services = [
+        ServiceDefinition(
+            service_id="svc-overview",
+            name="Overview Service",
+            capabilities=["logs", "alerts"],
+            log_sources=[ServiceLogSource(path=Path("overview.log"), channel="stdout")],
+        )
+    ]
+    entries = [
+        {
+            "timestamp": "2026-03-23T10:00:00+01:00",
+            "event": "query_out",
+            "level": "INFO",
+            "message": "done",
+            "fields": {"tool": "db_read", "response": {"rowCount": 1, "truncated": False}},
+        }
+    ]
+    monkeypatch.setattr("app.main.registry.list_services", lambda: services)
+    monkeypatch.setattr(
+        "app.main.settings_manager.snapshot",
+        lambda _services: {"preferences": {}, "service_visibility": {"svc-overview": True}},
+    )
+    monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
+    monkeypatch.setattr(
+        "app.main.process_manager.status",
+        lambda _service: {"running": True, "health_ok": True, "pid": 1234, "port": 9999},
+    )
+    monkeypatch.setattr(
+        "app.main.alert_engine.evaluate",
+        lambda **_kwargs: {"status": "ok", "triggered_count": 0, "triggered": []},
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/dashboard/overview")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pid"]
+    assert payload["service_count"] == 1
+    assert payload["service_visibility"]["svc-overview"] is True
+    item = payload["services"][0]
+    assert item["service_id"] == "svc-overview"
+    assert item["runtime"]["running"] is True
+    assert item["entries"][0]["event"] == "query_out"
+    assert item["metrics"]["db_queries_count"] == 1
+    assert item["alerts"]["status"] == "ok"
+
+
 def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
     service = ServiceDefinition(
         service_id="svc-db",
