@@ -2699,12 +2699,28 @@ saveOptionsBtn.addEventListener("click", async () => {
 
 async function boot() {
   await loadServices();
-  await Promise.all([loadDashboardSettings(), loadVaultState()]);
+  renderCards();
+
+  const settingsResults = await Promise.allSettled([loadDashboardSettings(), loadVaultState()]);
+  for (const result of settingsResults) {
+    if (result.status === "rejected") {
+      console.warn("Dashboard bootstrap warning:", result.reason);
+    }
+  }
+
   renderSettingsPanel();
-  await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
+  renderCards();
+
+  try {
+    await refreshDashboardOverview({ tail: Math.max(currentRecentRowsLimit() * 8, 2000), recentCount: 1 });
+  } catch (err) {
+    console.warn("Dashboard overview bootstrap failed:", err);
+  }
+
   scheduleAutoRefresh();
 }
 
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
+
