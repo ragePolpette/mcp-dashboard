@@ -1166,8 +1166,7 @@ function createOptionRow(opt) {
 
   if (opt.secret) {
     row.dataset.secretOption = "true";
-    row.dataset.optionId = opt.id;
-    row.dataset.optionType = opt.type;
+    row.dataset.secretOptionId = opt.id;
 
     const sourceSelect = document.createElement("select");
     sourceSelect.dataset.optionSource = opt.id;
@@ -2319,7 +2318,7 @@ function renderOptionsForm(serviceId) {
 function collectOptionsFromForm() {
   const values = {};
   for (const row of optionsForm.querySelectorAll("[data-secret-option='true']")) {
-    const optionId = row.dataset.optionId;
+    const optionId = row.dataset.secretOptionId;
     if (!optionId) {
       continue;
     }
@@ -2337,7 +2336,7 @@ function collectOptionsFromForm() {
     }
   }
 
-  const inputs = optionsForm.querySelectorAll("[data-option-id]");
+  const inputs = optionsForm.querySelectorAll("input[data-option-id], select[data-option-id], textarea[data-option-id]");
   for (const el of inputs) {
     const optionId = el.dataset.optionId;
     const type = el.dataset.optionType;
