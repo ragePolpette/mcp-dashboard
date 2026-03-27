@@ -176,6 +176,7 @@
 
       <div class="settings-tabs" role="tablist" aria-label="Sezioni impostazioni dashboard">
         <button id="settingsServicesTabBtn" class="settings-tab active" type="button" role="tab" aria-selected="true">Servizi</button>
+        <button id="settingsDbTargetsTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">DB Targets</button>
         <button id="settingsDashboardTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Dashboard</button>
         <button id="settingsVaultTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Vault</button>
       </div>
@@ -191,6 +192,28 @@
         <section class="settings-section">
           <h3>Preferenze dashboard</h3>
           <div id="settingsPreferencesForm" class="settings-form"></div>
+        </section>
+      </div>
+
+      <div id="settingsDbTargetsView" class="settings-view hidden">
+        <section class="settings-section">
+          <div class="db-targets-header">
+            <div>
+              <h3>DB Targets</h3>
+              <p id="settingsDbTargetsSummary" class="muted">Registry target DB non caricato.</p>
+            </div>
+            <div class="db-targets-actions">
+              <button id="dbTargetsReloadBtn" type="button">Ricarica</button>
+              <button id="dbTargetNewBtn" type="button" class="btn-ok">Nuovo Target</button>
+            </div>
+          </div>
+          <div class="db-targets-layout">
+            <aside id="dbTargetsList" class="db-targets-list"></aside>
+            <section class="db-target-editor">
+              <div id="dbTargetEditorMeta" class="db-target-editor-meta muted">Seleziona un target o creane uno nuovo.</div>
+              <form id="dbTargetEditorForm" class="db-target-editor-form"></form>
+            </section>
+          </div>
         </section>
       </div>
 

@@ -406,58 +406,6 @@
             "default": ""
           },
           {
-            "id": "target_dev_main_write_enabled",
-            "label": "DEV Main Write Enabled",
-            "type": "boolean",
-            "env_var": "TARGET_DEV_MAIN_WRITE_ENABLED",
-            "description": "Abilita o blocca il tool db_write sul target dev-main.",
-            "secret": false,
-            "required": false,
-            "default": true
-          },
-          {
-            "id": "target_dev_main_anonymization_enabled",
-            "label": "DEV Main Anonymization",
-            "type": "boolean",
-            "env_var": "TARGET_DEV_MAIN_ANONYMIZATION_ENABLED",
-            "description": "Abilita o disabilita anonimizzazione sul target dev-main.",
-            "secret": false,
-            "required": false,
-            "default": false
-          },
-          {
-            "id": "target_dev_main_anonymization_mode",
-            "label": "DEV Main Anonymization Mode",
-            "type": "select",
-            "env_var": "TARGET_DEV_MAIN_ANONYMIZATION_MODE",
-            "description": "Mode anonimizzazione per dev-main.",
-            "secret": false,
-            "required": false,
-            "default": "off",
-            "allowed_values": ["off", "deterministic", "hybrid", "llm-strict"]
-          },
-          {
-            "id": "target_dev_main_llm_provider",
-            "label": "DEV Main Provider",
-            "type": "select",
-            "env_var": "TARGET_DEV_MAIN_LLM_PROVIDER",
-            "description": "Provider LLM per dev-main.",
-            "secret": false,
-            "required": false,
-            "default": "none",
-            "allowed_values": ["none", "lmstudio", "ollama"]
-          },
-          {
-            "id": "target_dev_main_llm_model",
-            "label": "DEV Main Model",
-            "type": "string",
-            "env_var": "TARGET_DEV_MAIN_LLM_MODEL",
-            "description": "Model LLM per dev-main.",
-            "secret": false,
-            "required": false,
-            "default": ""
-          },
-          {
             "id": "db_prod_main_connection_string",
             "label": "PROD Main Connection String",
             "type": "string",
@@ -466,58 +414,6 @@
             "secret": true,
             "required": false,
             "default": ""
-          },
-          {
-            "id": "target_prod_main_write_enabled",
-            "label": "PROD Main Write Enabled",
-            "type": "boolean",
-            "env_var": "TARGET_PROD_MAIN_WRITE_ENABLED",
-            "description": "Abilita o blocca il tool db_write sul target prod-main.",
-            "secret": false,
-            "required": false,
-            "default": false
-          },
-          {
-            "id": "target_prod_main_anonymization_enabled",
-            "label": "PROD Main Anonymization",
-            "type": "boolean",
-            "env_var": "TARGET_PROD_MAIN_ANONYMIZATION_ENABLED",
-            "description": "Abilita o disabilita anonimizzazione sul target prod-main.",
-            "secret": false,
-            "required": false,
-            "default": true
-          },
-          {
-            "id": "target_prod_main_anonymization_mode",
-            "label": "PROD Main Anonymization Mode",
-            "type": "select",
-            "env_var": "TARGET_PROD_MAIN_ANONYMIZATION_MODE",
-            "description": "Mode anonimizzazione per prod-main.",
-            "secret": false,
-            "required": false,
-            "default": "hybrid",
-            "allowed_values": ["off", "deterministic", "hybrid", "llm-strict"]
-          },
-          {
-            "id": "target_prod_main_llm_provider",
-            "label": "PROD Main Provider",
-            "type": "select",
-            "env_var": "TARGET_PROD_MAIN_LLM_PROVIDER",
-            "description": "Provider LLM per prod-main.",
-            "secret": false,
-            "required": false,
-            "default": "lmstudio",
-            "allowed_values": ["none", "lmstudio", "ollama"]
-          },
-          {
-            "id": "target_prod_main_llm_model",
-            "label": "PROD Main Model",
-            "type": "string",
-            "env_var": "TARGET_PROD_MAIN_LLM_MODEL",
-            "description": "Model LLM per prod-main.",
-            "secret": false,
-            "required": false,
-            "default": "google/gemma-3-4b"
           },
           {
             "id": "anon_hash_salt",
