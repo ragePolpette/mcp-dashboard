@@ -66,6 +66,9 @@ Endpoint:
 - `PUT /api/db-targets/{target_id}`
 - `POST /api/db-targets/{target_id}/disable`
 - `POST /api/db-targets/{target_id}/enable`
+- `GET /api/services/llm-memory/memory-admin/summary`
+- `GET /api/services/llm-memory/memory-admin/audit`
+- `GET /api/services/llm-memory/memory-admin/projects`
 
 Le opzioni non secret vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
 Le opzioni `secret` restano solo in memoria del backend dashboard finche' la dashboard resta attiva e non vengono mai salvate su disco.
@@ -93,6 +96,9 @@ Se riavvii la dashboard, la devi reinserire.
 
 Con il registry `DB Targets`, `llm-sql-db-mcp` non dipende piu da una lista rigida di target hardcoded nelle opzioni del servizio.
 La dashboard mantiene il modello di controllo e genera un export runtime dedicato consumato dal server SQL MCP.
+
+Per `llm-memory`, il dashboard espone anche un proxy backend read-only verso la superficie admin locale del servizio.
+Questo evita letture dirette del database dal pannello e mantiene il confine pulito tra UI/control-plane e ownership del runtime `llm-memory`.
 
 ## Config servizi
 

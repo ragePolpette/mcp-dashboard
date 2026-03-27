@@ -20,3 +20,12 @@ Regole locali per il progetto `mcp-dashboard`.
 - `backend/app/log_parsers.py`
 - `backend/app/log_rules.py`
 - `backend/app/log_pipeline.py`
+
+## Dependency Policy
+- Se modifichi `backend/requirements*.txt`, `package.json`, `package-lock.json` o altri manifest dipendenze del repo, esegui `node C:\Users\Gianmarco\Urgewalt\dependency-policy\dependency-policy-check.mjs --repo . --mode auto` prima di chiudere il task.
+- Se il check fallisce, il task non va considerato concluso senza eccezione approvata in `C:\Users\Gianmarco\Urgewalt\SECURITY_EXCEPTIONS.md`.
+- Se non tocchi manifest o lockfile dipendenze, questo check non è obbligatorio.
+
+## Chiusura task
+- Se hai toccato manifest o lockfile dipendenze, nel riepilogo finale devi riportare esplicitamente quale comando di dependency-policy hai eseguito e se è passato o fallito.
+- Non dichiarare il task concluso omettendo un risultato dependency-policy fallito.

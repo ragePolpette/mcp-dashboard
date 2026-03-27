@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from app.main import app  # noqa: E402
+from app.memory_admin_client import MemoryAdminProxyError  # noqa: E402
 from app.models import ServiceControlDefinition, ServiceDefinition, ServiceLogSource  # noqa: E402
 from app.log_pipeline import LogPipeline  # noqa: E402
 from app.log_rules import LogRuleEngine  # noqa: E402
@@ -64,6 +65,104 @@ def test_services_endpoint_includes_kind_group_and_capabilities(monkeypatch):
     assert payload[0]["kind"] == "rag"
     assert payload[0]["group"] == "knowledge"
     assert payload[0]["capabilities"] == ["logs", "activity", "alerts"]
+
+
+def test_memory_admin_summary_proxy_returns_downstream_payload(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        kind="memory",
+        group="knowledge",
+        capabilities=["logs", "activity", "memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr(
+        "app.main.memory_admin_client.get_summary",
+        lambda _service: {"status": "ok", "summary": {"counts": {"active_entries": 3}}},
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-memory/memory-admin/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["summary"]["counts"]["active_entries"] == 3
+
+
+def test_memory_admin_audit_proxy_forwards_filters(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_audit(_service, **filters):
+        captured.update(filters)
+        return {"status": "ok", "audit": {"count": 1, "items": [{"action": "export"}]}}
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr("app.main.memory_admin_client.get_audit", fake_get_audit)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/services/llm-memory/memory-admin/audit"
+        "?limit=25&action=export&actor=agent-a&reason=manual&since=2026-03-26T10:00:00Z"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["audit"]["count"] == 1
+    assert captured == {
+        "limit": 25,
+        "entry_id": None,
+        "action": "export",
+        "actor": "agent-a",
+        "reason": "manual",
+        "since": "2026-03-26T10:00:00Z",
+    }
+
+
+def test_memory_admin_projects_proxy_maps_proxy_errors(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr(
+        "app.main.memory_admin_client.get_projects",
+        lambda _service, **_filters: (_ for _ in ()).throw(
+            MemoryAdminProxyError("Unable to reach llm-memory admin surface", status_code=502)
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-memory/memory-admin/projects?limit=20")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Unable to reach llm-memory admin surface"
 
 
 def test_dashboard_overview_returns_runtime_logs_metrics_and_alerts(monkeypatch):

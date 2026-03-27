@@ -95,7 +95,8 @@
         "activity",
         "alerts",
         "runtime_options",
-        "health_details"
+        "health_details",
+        "memory_admin"
       ],
       "parser_chain": [
         "json",
