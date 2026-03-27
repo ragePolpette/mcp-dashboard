@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .alert_engine import AlertEngine
+from .db_target_registry import DbTargetRegistry
 from .dashboard_settings import DashboardSettingsManager
 from .log_pipeline import LogPipeline
 from .log_rules import LogRuleEngine
@@ -36,6 +37,9 @@ ALERTS_CONFIG = CONFIG_DIR / "alerts.json"
 OPTIONS_STATE = RUNTIME_DIR / "service_options.json"
 DASHBOARD_SETTINGS_STATE = RUNTIME_DIR / "dashboard_settings.json"
 VAULT_ROOT = RUNTIME_DIR / "vault"
+DB_TARGETS_STATE = RUNTIME_DIR / "db_targets.json"
+DB_TARGETS_RUNTIME_EXPORT = RUNTIME_DIR / "llm_sql_db_targets.runtime.json"
+DB_TARGETS_BOOTSTRAP = CONFIG_DIR / "db_targets.bootstrap.json"
 
 registry = ServiceRegistry(SERVICES_CONFIG)
 rule_engine = LogRuleEngine(RULES_CONFIG)
@@ -46,6 +50,12 @@ vault_manager = DashboardSecretVault(VAULT_ROOT)
 options_manager = ServiceOptionsManager(OPTIONS_STATE, vault=vault_manager)
 options_manager.scrub_persisted_secrets(registry.list_services())
 settings_manager = DashboardSettingsManager(DASHBOARD_SETTINGS_STATE)
+db_target_registry = DbTargetRegistry(
+    DB_TARGETS_STATE,
+    DB_TARGETS_RUNTIME_EXPORT,
+    DB_TARGETS_BOOTSTRAP,
+    vault=vault_manager,
+)
 
 
 @asynccontextmanager
@@ -77,11 +87,38 @@ class VaultEntryPayload(BaseModel):
     value: str = ""
 
 
+class DbTargetPayload(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
 def _service_or_404(service_id: str):
     service = registry.get(service_id)
     if service is None:
         raise HTTPException(status_code=404, detail=f"Unknown service: {service_id}")
     return service
+
+
+def _db_target_or_404(target_id: str) -> dict[str, Any]:
+    target = db_target_registry.get_target(target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Unknown db target: {target_id}")
+    return target
+
+
+def _combined_secret_ref_usage() -> dict[str, list[dict[str, str]]]:
+    usage: dict[str, list[dict[str, str]]] = {}
+    for source_usage in (options_manager.secret_ref_usage(), db_target_registry.secret_ref_usage()):
+        for ref, refs in source_usage.items():
+            usage.setdefault(ref, []).extend(refs)
+    return usage
+
+
+def _runtime_env_overrides(service) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if service.service_id == "llm-sql-db-mcp":
+        overrides.update(db_target_registry.runtime_env())
+    overrides.update(options_manager.options_env(service))
+    return overrides
 
 
 def _parse_entry_timestamp(value: Any) -> datetime | None:
@@ -522,7 +559,7 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
 
 @app.get("/api/vault")
 def vault_status() -> dict[str, Any]:
-    return {**vault_manager.status(), "ref_usage": options_manager.secret_ref_usage()}
+    return {**vault_manager.status(), "ref_usage": _combined_secret_ref_usage()}
 
 
 @app.post("/api/vault/init")
@@ -555,7 +592,7 @@ def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
     return {
         "ok": True,
         "entry": entry,
-        "vault": {**vault_manager.status(), "ref_usage": options_manager.secret_ref_usage()},
+        "vault": {**vault_manager.status(), "ref_usage": _combined_secret_ref_usage()},
     }
 
 
@@ -567,8 +604,65 @@ def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=exc.message) from exc
     return {
         "ok": True,
-        "vault": {**status, "ref_usage": options_manager.secret_ref_usage()},
+        "vault": {**status, "ref_usage": _combined_secret_ref_usage()},
     }
+
+
+@app.get("/api/db-targets")
+def list_db_targets() -> dict[str, Any]:
+    targets = db_target_registry.list_targets()
+    return {
+        "count": len(targets),
+        "targets": targets,
+        "runtime_export_path": str(DB_TARGETS_RUNTIME_EXPORT),
+    }
+
+
+@app.get("/api/db-targets/{target_id}")
+def get_db_target(target_id: str) -> dict[str, Any]:
+    return _db_target_or_404(target_id)
+
+
+@app.post("/api/db-targets")
+def create_db_target(payload: DbTargetPayload) -> dict[str, Any]:
+    try:
+        target = db_target_registry.create_target(payload.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "target": target}
+
+
+@app.put("/api/db-targets/{target_id}")
+def update_db_target(target_id: str, payload: DbTargetPayload) -> dict[str, Any]:
+    try:
+        target = db_target_registry.update_target(target_id, payload.values)
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if "Unknown target_id" in detail else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return {"ok": True, "target": target}
+
+
+@app.post("/api/db-targets/{target_id}/disable")
+def disable_db_target(target_id: str) -> dict[str, Any]:
+    try:
+        target = db_target_registry.update_target(target_id, {"status": "disabled"})
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if "Unknown target_id" in detail else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return {"ok": True, "target": target}
+
+
+@app.post("/api/db-targets/{target_id}/enable")
+def enable_db_target(target_id: str) -> dict[str, Any]:
+    try:
+        target = db_target_registry.update_target(target_id, {"status": "active"})
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = 404 if "Unknown target_id" in detail else 400
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+    return {"ok": True, "target": target}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -684,11 +778,11 @@ def service_options_update(service_id: str, payload: OptionUpdatePayload) -> dic
 def service_start(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
-        missing_options = options_manager.missing_required_options(service)
+        env_overrides = _runtime_env_overrides(service)
+        missing_options = options_manager.missing_required_options(service, env_overrides=env_overrides)
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
-        env_overrides = options_manager.options_env(service)
         return process_manager.start(service, env_overrides=env_overrides)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -707,11 +801,11 @@ def service_stop(service_id: str) -> dict[str, Any]:
 def service_restart(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
-        missing_options = options_manager.missing_required_options(service)
+        env_overrides = _runtime_env_overrides(service)
+        missing_options = options_manager.missing_required_options(service, env_overrides=env_overrides)
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
-        env_overrides = options_manager.options_env(service)
         return process_manager.restart(service, env_overrides=env_overrides)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

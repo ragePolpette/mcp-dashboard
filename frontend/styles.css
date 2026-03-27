@@ -505,6 +505,172 @@ button:disabled {
   gap: 10px;
 }
 
+.db-targets-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.db-targets-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.db-targets-layout {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.db-targets-list,
+.db-target-editor {
+  border: 1px solid #254261;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.25);
+  padding: 12px;
+}
+
+.db-targets-list {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  max-height: 65vh;
+  overflow: auto;
+}
+
+.db-target-card {
+  border: 1px solid #2a4a6c;
+  border-radius: 12px;
+  background: rgba(15, 27, 40, 0.5);
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.db-target-card.active-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(242, 184, 75, 0.24);
+}
+
+.db-target-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.db-target-card-title {
+  font-weight: 700;
+}
+
+.db-target-card-meta,
+.db-target-card-hint,
+.db-target-editor-meta,
+.db-target-inline-hint {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.db-target-badge-row,
+.db-target-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.db-target-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.db-target-badge.env-prod {
+  color: #ffd0d0;
+  border-color: #9f3232;
+  background: rgba(95, 33, 33, 0.45);
+}
+
+.db-target-badge.env-nonprod {
+  color: #9de0c1;
+  border-color: #2d7a59;
+  background: rgba(24, 65, 47, 0.45);
+}
+
+.db-target-badge.status-disabled {
+  color: #ffd9a6;
+  border-color: #9b5c2a;
+  background: rgba(91, 56, 22, 0.45);
+}
+
+.db-target-badge.status-active {
+  color: #d7e5f3;
+  border-color: #385a7f;
+  background: rgba(18, 35, 53, 0.55);
+}
+
+.db-target-editor-form {
+  margin-top: 10px;
+  display: grid;
+  gap: 12px;
+}
+
+.db-target-field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.db-target-field {
+  display: grid;
+  gap: 6px;
+}
+
+.db-target-field label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.db-target-field textarea,
+.db-target-field input,
+.db-target-field select {
+  width: 100%;
+}
+
+.db-target-field textarea {
+  min-height: 86px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.db-target-editor-section {
+  border: 1px solid #26425f;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.22);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.db-target-editor-section h4 {
+  margin: 0;
+}
+
 .vault-panel {
   margin-top: 10px;
   display: grid;
@@ -1097,6 +1263,10 @@ tbody td {
 @media (max-width: 860px) {
   .topbar {
     flex-direction: column;
+  }
+
+  .db-targets-layout {
+    grid-template-columns: 1fr;
   }
 
   .advanced-actions {

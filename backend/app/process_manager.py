@@ -9,6 +9,7 @@ import socket
 import subprocess
 import threading
 import time
+import http.client
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -384,5 +385,5 @@ class ServiceProcessManager:
                     "ok": 200 <= response.status < 400,
                     "payload": payload if isinstance(payload, dict) else None,
                 }
-        except (urllib.error.URLError, TimeoutError, ValueError):
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError, http.client.HTTPException):
             return {"ok": False, "payload": None}
