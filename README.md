@@ -10,6 +10,8 @@ Dashboard web locale per monitoring e controllo servizi MCP:
 - azioni `Start`, `Stop`, `Restart` da UI
 - opzioni pre-avvio per servizio
 - gestione opzioni `secret` (es. connection string DB) non esposte in chiaro in API/UI e non salvate su disco
+- vault locale persistente per segreti riusabili via riferimenti `vault://...`
+- registry `DB Targets` per target SQL runtime-editable con export verso `llm-sql-db-mcp`
 - pannello `Avanzate` con log dettagliati e stream SSE
 - pipeline log estensibile (sources + parser chain + rules)
 
@@ -50,6 +52,21 @@ Endpoint:
 - `GET /api/services/{service_id}/options`
 - `POST /api/services/{service_id}/options`
 
+## API vault e DB targets
+
+- `GET /api/vault`
+- `POST /api/vault/init`
+- `POST /api/vault/unlock`
+- `POST /api/vault/lock`
+- `POST /api/vault/entries`
+- `DELETE /api/vault/entries`
+- `GET /api/db-targets`
+- `GET /api/db-targets/{target_id}`
+- `POST /api/db-targets`
+- `PUT /api/db-targets/{target_id}`
+- `POST /api/db-targets/{target_id}/disable`
+- `POST /api/db-targets/{target_id}/enable`
+
 Le opzioni non secret vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
 Le opzioni `secret` restano solo in memoria del backend dashboard finche' la dashboard resta attiva e non vengono mai salvate su disco.
 I servizi avviati dalla dashboard partono con terminale nascosto; stdout/stderr vengono rediretti ai file log configurati e sono consultabili dal pannello `Avanzate`.
@@ -73,6 +90,9 @@ Nel pannello `Avanzate`:
 Le opzioni secret non vengono restituite in chiaro; viene mostrato solo se il valore e' impostato.
 Se fai `Restart` dalla stessa dashboard web/backend, la connection string resta disponibile in memoria.
 Se riavvii la dashboard, la devi reinserire.
+
+Con il registry `DB Targets`, `llm-sql-db-mcp` non dipende piu da una lista rigida di target hardcoded nelle opzioni del servizio.
+La dashboard mantiene il modello di controllo e genera un export runtime dedicato consumato dal server SQL MCP.
 
 ## Config servizi
 
@@ -107,3 +127,4 @@ Note operative:
 
 Dettagli:
 - `docs/LOG_PIPELINE_SPEC.md`
+- `docs/db-target-registry-migration.md`
