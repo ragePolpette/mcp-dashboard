@@ -345,7 +345,11 @@ class ServiceOptionsManager:
                     out[option.env_var] = str(normalized)
             return out
 
-    def missing_required_options(self, service: ServiceDefinition) -> list[str]:
+    def missing_required_options(
+        self,
+        service: ServiceDefinition,
+        env_overrides: dict[str, Any] | None = None,
+    ) -> list[str]:
         control = service.control
         if control is None:
             return []
@@ -360,6 +364,12 @@ class ServiceOptionsManager:
                 if option.secret:
                     if option.option_id in secret_state and self._is_set(option, secret_state[option.option_id]):
                         continue
+                    if env_overrides and option.env_var in env_overrides:
+                        try:
+                            if self._is_set(option, self._normalize_value(option, env_overrides[option.env_var])):
+                                continue
+                        except ValueError:
+                            pass
                     binding = service_state.get(option.option_id)
                     if isinstance(binding, dict) and binding.get("source") == "vault" and binding.get("ref"):
                         continue
@@ -369,6 +379,12 @@ class ServiceOptionsManager:
                 value = service_state.get(option.option_id, option.default)
                 normalized = self._normalize_value(option, value)
                 if not self._is_set(option, normalized):
+                    if env_overrides and option.env_var in env_overrides:
+                        try:
+                            if self._is_set(option, self._normalize_value(option, env_overrides[option.env_var])):
+                                continue
+                        except ValueError:
+                            pass
                     missing.append(option.label or option.option_id)
         return missing
 

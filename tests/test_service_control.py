@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import tempfile
 from pathlib import Path
 import sys
@@ -244,6 +245,19 @@ def test_probe_health_parses_json_payload(monkeypatch):
     assert payload["ok"] is True
     assert payload["payload"]["status"] == "ready"
     assert payload["payload"]["write_enabled"] is False
+
+
+def test_probe_health_treats_socket_timeout_as_unhealthy(monkeypatch):
+    manager = ServiceProcessManager()
+
+    def raise_timeout(req, timeout=1.5):
+        raise socket.timeout("timed out while reading response")
+
+    monkeypatch.setattr("app.process_manager.urllib.request.urlopen", raise_timeout)
+
+    payload = manager._probe_health("http://127.0.0.1:8765/health")
+
+    assert payload == {"ok": False, "payload": None}
 
 
 def test_start_applies_env_overrides():

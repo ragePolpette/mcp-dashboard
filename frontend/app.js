@@ -8,12 +8,20 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const settingsFlash = document.getElementById("settingsFlash");
 const settingsServicesTabBtn = document.getElementById("settingsServicesTabBtn");
+const settingsDbTargetsTabBtn = document.getElementById("settingsDbTargetsTabBtn");
 const settingsDashboardTabBtn = document.getElementById("settingsDashboardTabBtn");
 const settingsVaultTabBtn = document.getElementById("settingsVaultTabBtn");
 const settingsServicesView = document.getElementById("settingsServicesView");
+const settingsDbTargetsView = document.getElementById("settingsDbTargetsView");
 const settingsDashboardView = document.getElementById("settingsDashboardView");
 const settingsVaultView = document.getElementById("settingsVaultView");
 const settingsServicesList = document.getElementById("settingsServicesList");
+const settingsDbTargetsSummary = document.getElementById("settingsDbTargetsSummary");
+const dbTargetsList = document.getElementById("dbTargetsList");
+const dbTargetEditorMeta = document.getElementById("dbTargetEditorMeta");
+const dbTargetEditorForm = document.getElementById("dbTargetEditorForm");
+const dbTargetsReloadBtn = document.getElementById("dbTargetsReloadBtn");
+const dbTargetNewBtn = document.getElementById("dbTargetNewBtn");
 const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
 const vaultStatusCard = document.getElementById("vaultStatusCard");
 const vaultControls = document.getElementById("vaultControls");
@@ -65,6 +73,14 @@ let advancedActiveTab = "options";
 let dashboardStatus = { pid: null };
 let settingsActiveTab = "services";
 let settingsFlashState = null;
+let dbTargetsState = {
+  loading: false,
+  error: "",
+  items: [],
+  selectedId: "",
+  draft: null,
+  runtimeExportPath: ""
+};
 let dashboardSettings = {
   preferences: {
     refresh_interval_sec: 5,
@@ -1088,41 +1104,24 @@ function renderAlertsForAdvanced(serviceId) {
 }
 
 function optionGroupDefinitions(serviceId) {
-  if (serviceId !== "llm-sql-db-mcp") {
-    return [
-      {
-        id: "credentials",
-        title: "Credenziali e Secret",
-        description: "Valori sensibili o token richiesti al bootstrap del servizio.",
-        match: opt => Boolean(opt.secret)
-      },
-      {
-        id: "runtime-behavior",
-        title: "Runtime e comportamento",
-        description: "Flag operativi e policy applicate all'avvio del servizio.",
-        match: opt => !opt.secret
-      }
-    ];
-  }
-
   return [
     {
-      id: "dev-main",
-      title: "DEV Main",
-      description: "Connessione, write policy e strategia AI per il target dev-main.",
-      match: opt => opt.id === "db_dev_main_connection_string" || opt.id.startsWith("target_dev_main_")
+      id: "credentials",
+      title: "Credenziali e Secret",
+      description: "Valori sensibili o token richiesti al bootstrap del servizio.",
+      match: opt => Boolean(opt.secret) || /(connection|secret|token|vault|password)/i.test(opt.id)
     },
     {
-      id: "prod-main",
-      title: "PROD Main",
-      description: "Connessione, write policy e anonimizzazione per il target prod-main.",
-      match: opt => opt.id === "db_prod_main_connection_string" || opt.id.startsWith("target_prod_main_")
+      id: "policy",
+      title: "Policy e limiti",
+      description: "Flag operativi, limiti e regole che modellano il comportamento del target.",
+      match: opt => /(read|write|status|max_|limit|policy|anonym|mode|allowed_tools)/i.test(opt.id)
     },
     {
       id: "provider-runtime",
       title: "Provider Runtime",
       description: "Endpoint locali dei provider AI usati dai target che richiedono classificazione.",
-      match: opt => opt.id === "lmstudio_base_url" || opt.id === "ollama_base_url"
+      match: opt => /(provider|model|base_url|endpoint)/i.test(opt.id)
     },
     {
       id: "global-anon",
@@ -1558,6 +1557,7 @@ async function loadVaultState() {
     entries: Array.isArray(payload.entries) ? payload.entries : [],
     ref_usage: payload.ref_usage && typeof payload.ref_usage === "object" ? payload.ref_usage : {}
   };
+  renderDbTargetsPanel();
 }
 
 function setSettingsFlash(message, kind = "info", ref = "") {
@@ -1602,19 +1602,23 @@ function renderSettingsFlash() {
 }
 
 function setSettingsTab(tabId) {
-  settingsActiveTab = ["services", "dashboard", "vault"].includes(tabId) ? tabId : "services";
+  settingsActiveTab = ["services", "db-targets", "dashboard", "vault"].includes(tabId) ? tabId : "services";
   const isServices = settingsActiveTab === "services";
+  const isDbTargets = settingsActiveTab === "db-targets";
   const isDashboard = settingsActiveTab === "dashboard";
   const isVault = settingsActiveTab === "vault";
 
   settingsServicesTabBtn.classList.toggle("active", isServices);
   settingsServicesTabBtn.setAttribute("aria-selected", String(isServices));
+  settingsDbTargetsTabBtn.classList.toggle("active", isDbTargets);
+  settingsDbTargetsTabBtn.setAttribute("aria-selected", String(isDbTargets));
   settingsDashboardTabBtn.classList.toggle("active", isDashboard);
   settingsDashboardTabBtn.setAttribute("aria-selected", String(isDashboard));
   settingsVaultTabBtn.classList.toggle("active", isVault);
   settingsVaultTabBtn.setAttribute("aria-selected", String(isVault));
 
   settingsServicesView.classList.toggle("hidden", !isServices);
+  settingsDbTargetsView.classList.toggle("hidden", !isDbTargets);
   settingsDashboardView.classList.toggle("hidden", !isDashboard);
   settingsVaultView.classList.toggle("hidden", !isVault);
 }
@@ -1743,6 +1747,7 @@ async function initializeVault() {
     });
     await loadVaultState();
     renderVaultPanel();
+    renderDbTargetsPanel();
     setSettingsFlash("Local Vault inizializzato e sbloccato.", "success");
     if (advancedServiceId) {
       await loadServiceOptions(advancedServiceId);
@@ -1768,6 +1773,7 @@ async function unlockVault() {
     });
     await loadVaultState();
     renderVaultPanel();
+    renderDbTargetsPanel();
     setSettingsFlash("Local Vault sbloccato. I riferimenti salvati sono di nuovo utilizzabili.", "success");
     if (advancedServiceId) {
       await loadServiceOptions(advancedServiceId);
@@ -1783,6 +1789,7 @@ async function lockVault() {
     await apiJson("/api/vault/lock", { method: "POST" });
     await loadVaultState();
     renderVaultPanel();
+    renderDbTargetsPanel();
     setSettingsFlash("Local Vault bloccato.", "info");
     if (advancedServiceId) {
       await loadServiceOptions(advancedServiceId);
@@ -1831,6 +1838,7 @@ async function saveVaultEntry() {
       valueInput.value = "";
     }
     renderVaultPanel();
+    renderDbTargetsPanel();
     setSettingsFlash("Secret salvato nel Local Vault.", "success", normalizedRef);
     if (advancedServiceId) {
       await loadServiceOptions(advancedServiceId);
@@ -1857,6 +1865,7 @@ async function deleteVaultEntry(ref) {
       ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
     };
     renderVaultPanel();
+    renderDbTargetsPanel();
     setSettingsFlash("Secret eliminato dal Local Vault.", "success");
     if (advancedServiceId) {
       await loadServiceOptions(advancedServiceId);
@@ -2010,6 +2019,7 @@ function renderSettingsPanel() {
   }
 
   renderSettingsFlash();
+  renderDbTargetsPanel();
   renderVaultPanel();
   setSettingsTab(settingsActiveTab);
 }
@@ -2087,9 +2097,9 @@ async function toggleSettingsPanel(forceOpen = null) {
   settingsPanel.classList.toggle("hidden", !shouldOpen);
   if (shouldOpen) {
     try {
-      await loadVaultState();
+      await Promise.all([loadVaultState(), loadDbTargets()]);
     } catch (error) {
-      console.error("Load vault failed", error);
+      console.error("Settings bootstrap failed", error);
     }
     renderSettingsPanel();
   } else {
@@ -2368,6 +2378,531 @@ function collectOptionsFromForm() {
     values[optionId] = text;
   }
   return values;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
+
+function cloneValue(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function normalizeDbTargetText(value, fallback = "") {
+  const text = value === undefined || value === null ? fallback : String(value);
+  return text.trim();
+}
+
+function normalizeDbTargetEnvironment(value) {
+  return normalizeDbTargetText(value, "dev").toLowerCase() || "dev";
+}
+
+function normalizeDbTargetStatus(value) {
+  const status = normalizeDbTargetText(value, "active").toLowerCase();
+  return status === "disabled" ? "disabled" : "active";
+}
+
+function buildDbTargetConnectionEnvVar(targetId) {
+  const normalized = normalizeDbTargetText(targetId)
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase();
+  return normalized ? `DB_${normalized}_CONNECTION_STRING` : "";
+}
+
+function normalizeDbTargetAllowedTools(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(value.map(item => normalizeDbTargetText(item)).filter(Boolean))];
+  }
+  if (typeof value === "string") {
+    return [...new Set(value.split(",").map(item => normalizeDbTargetText(item)).filter(Boolean))];
+  }
+  return [];
+}
+
+function normalizeDbTargetBinding(binding = {}, connectionVaultRef = "") {
+  const vaultRef = normalizeDbTargetText(
+    binding.vault_ref ?? binding.connection_vault_ref ?? binding.ref ?? connectionVaultRef
+  );
+  const status = normalizeDbTargetText(binding.status ?? binding.state ?? "");
+  const message = normalizeDbTargetText(binding.status_message ?? binding.message ?? "");
+  const ready = binding.is_ready ?? binding.ready ?? binding.env_ready ?? binding.vault_ready;
+  return {
+    source: normalizeDbTargetText(binding.source ?? "", "none").toLowerCase() || "none",
+    vault_ref: vaultRef,
+    env_var: normalizeDbTargetText(binding.env_var ?? binding.connection_env_var ?? ""),
+    is_ready: typeof ready === "boolean" ? ready : Boolean(vaultRef && status !== "blocked"),
+    env_ready: Boolean(binding.env_ready ?? binding.runtime_ready ?? false),
+    vault_ready: Boolean(binding.vault_ready ?? Boolean(vaultRef)),
+    status,
+    status_message: message
+  };
+}
+
+function normalizeDbTargetRecord(raw = {}) {
+  const targetId = normalizeDbTargetText(raw.target_id ?? raw.id ?? raw.targetId);
+  const environment = normalizeDbTargetEnvironment(raw.environment);
+  const policy = raw.policy && typeof raw.policy === "object" ? raw.policy : {};
+  const anonymization = raw.anonymization && typeof raw.anonymization === "object" ? raw.anonymization : {};
+  const limits = raw.limits && typeof raw.limits === "object" ? raw.limits : {};
+  const binding = normalizeDbTargetBinding(
+    raw.binding ?? raw.connection_binding ?? raw.connection ?? raw.secret_binding ?? {},
+    raw.connection_vault_ref ?? raw.vault_ref ?? raw.connection_ref ?? ""
+  );
+
+  return {
+    target_id: targetId,
+    display_name: normalizeDbTargetText(raw.display_name ?? raw.name ?? targetId),
+    environment,
+    db_kind: normalizeDbTargetText(raw.db_kind ?? raw.kind ?? "sqlserver", "sqlserver").toLowerCase(),
+    status: normalizeDbTargetStatus(raw.status ?? (raw.enabled === false ? "disabled" : "active")),
+    connection_vault_ref: normalizeDbTargetText(
+      raw.connection_vault_ref ?? raw.vault_ref ?? raw.connection_ref ?? binding.vault_ref
+    ),
+    connection_env_var: normalizeDbTargetText(
+      raw.connection_env_var ?? raw.connection_env ?? binding.env_var ?? buildDbTargetConnectionEnvVar(targetId)
+    ),
+    read_enabled: Boolean(raw.read_enabled ?? policy.read_enabled ?? raw.readAllowed ?? true),
+    write_enabled: Boolean(
+      raw.write_enabled ?? policy.effective_write_enabled ?? policy.write_enabled ?? raw.writeAllowed ?? false
+    ),
+    anonymization_enabled: Boolean(
+      raw.anonymization_enabled ?? anonymization.enabled ?? raw.anonymizationEnabled ?? environment === "prod"
+    ),
+    anonymization_mode: normalizeDbTargetText(
+      raw.anonymization_mode ?? anonymization.mode ?? raw.anonymizationMode ?? "off"
+    ).toLowerCase(),
+    llm_provider: normalizeDbTargetText(
+      raw.llm_provider ?? anonymization.provider ?? raw.llmProvider ?? "none"
+    ).toLowerCase() || "none",
+    llm_model: normalizeDbTargetText(raw.llm_model ?? anonymization.model ?? raw.llmModel ?? ""),
+    max_rows: Number.isFinite(Number(raw.max_rows ?? limits.max_rows)) ? Number(raw.max_rows ?? limits.max_rows) : 100,
+    max_result_bytes: Number.isFinite(Number(raw.max_result_bytes ?? limits.max_result_bytes))
+      ? Number(raw.max_result_bytes ?? limits.max_result_bytes)
+      : 131072,
+    allowed_tools: normalizeDbTargetAllowedTools(raw.allowed_tools ?? raw.allowedTools ?? []),
+    binding,
+    raw
+  };
+}
+
+function defaultDbTargetDraft() {
+  return normalizeDbTargetRecord({
+    target_id: "",
+    display_name: "",
+    environment: "dev",
+    db_kind: "sqlserver",
+    status: "active",
+    connection_vault_ref: "",
+    read_enabled: true,
+    write_enabled: true,
+    anonymization_enabled: false,
+    anonymization_mode: "off",
+    llm_provider: "none",
+    llm_model: "",
+    max_rows: 100,
+    max_result_bytes: 131072,
+    allowed_tools: ["db_target_info", "db_policy_info", "db_read", "db_write"]
+  });
+}
+
+function isDbTargetProd(target) {
+  return normalizeDbTargetEnvironment(target?.environment) === "prod";
+}
+
+function isDbTargetHardFencedField(fieldId, target) {
+  if (!isDbTargetProd(target)) {
+    return false;
+  }
+  return ["write_enabled", "anonymization_enabled", "anonymization_mode"].includes(fieldId);
+}
+
+function normalizeDbTargetDraft(target) {
+  const draft = normalizeDbTargetRecord(target ?? defaultDbTargetDraft());
+  if (!draft.target_id) {
+    draft.target_id = "";
+  }
+  draft.display_name = normalizeDbTargetText(draft.display_name, draft.target_id);
+  draft.connection_env_var = normalizeDbTargetText(
+    draft.connection_env_var || buildDbTargetConnectionEnvVar(draft.target_id)
+  );
+  draft.allowed_tools = normalizeDbTargetAllowedTools(draft.allowed_tools);
+  if (!draft.allowed_tools.length) {
+    draft.allowed_tools = ["db_target_info", "db_policy_info", "db_read", "db_write"];
+  }
+  if (isDbTargetProd(draft)) {
+    draft.read_enabled = true;
+    draft.write_enabled = false;
+    draft.anonymization_enabled = true;
+    if (!["deterministic", "hybrid", "llm-strict"].includes(draft.anonymization_mode)) {
+      draft.anonymization_mode = "hybrid";
+    }
+  }
+  if (!draft.anonymization_enabled) {
+    draft.anonymization_mode = "off";
+    draft.llm_provider = "none";
+    draft.llm_model = "";
+  }
+  return draft;
+}
+
+function summarizeDbTargetBinding(target) {
+  const vaultReady =
+    Boolean(
+      target.connection_vault_ref &&
+        vaultState.unlocked &&
+        Array.isArray(vaultState.entries) &&
+        vaultState.entries.some(entry => entry.ref === target.connection_vault_ref)
+    ) || Boolean(target.binding?.vault_ready);
+  const envReady = Boolean(target.binding?.env_ready ?? target.binding?.runtime_ready ?? target.connection_env_var);
+  const statusMessage =
+    target.binding?.status_message ||
+    (target.connection_vault_ref
+      ? vaultReady
+        ? "Riferimento Local Vault pronto."
+        : "Riferimento Local Vault presente ma non ancora pronto."
+      : "Nessun ref Local Vault configurato.");
+  return { vaultReady, envReady, statusMessage };
+}
+
+function summarizeDbTargetPolicy(target) {
+  return [
+    target.read_enabled ? "read ON" : "read OFF",
+    target.write_enabled ? "write ON" : "write OFF",
+    target.anonymization_enabled ? `anon ${target.anonymization_mode || "on"}` : "anon OFF"
+  ].join(" | ");
+}
+
+function summarizeDbTargetLimits(target) {
+  return `max_rows ${formatNumber(target.max_rows, 0)} | max_bytes ${formatNumber(target.max_result_bytes, 0)}`;
+}
+
+function getDbTargetDraft() {
+  if (dbTargetsState.draft) {
+    return dbTargetsState.draft;
+  }
+  dbTargetsState.draft = defaultDbTargetDraft();
+  dbTargetsState.selectedId = "__new__";
+  return dbTargetsState.draft;
+}
+
+function setDbTargetDraft(draft, selectedId = null) {
+  dbTargetsState.draft = normalizeDbTargetDraft(draft);
+  if (selectedId !== null) {
+    dbTargetsState.selectedId = selectedId;
+  }
+}
+
+function selectDbTarget(targetId) {
+  const target = dbTargetsState.items.find(item => item.target_id === targetId);
+  if (!target) {
+    return;
+  }
+  dbTargetsState.selectedId = target.target_id;
+  dbTargetsState.draft = normalizeDbTargetDraft(cloneValue(target));
+  renderDbTargetsPanel();
+}
+
+function startNewDbTarget() {
+  dbTargetsState.selectedId = "__new__";
+  dbTargetsState.draft = defaultDbTargetDraft();
+  renderDbTargetsPanel();
+}
+
+function collectDbTargetPayload() {
+  const draft = normalizeDbTargetDraft(cloneValue(getDbTargetDraft()));
+  draft.target_id = normalizeDbTargetText(draft.target_id);
+  draft.display_name = normalizeDbTargetText(draft.display_name, draft.target_id);
+  draft.environment = normalizeDbTargetEnvironment(draft.environment);
+  draft.status = normalizeDbTargetStatus(draft.status);
+  draft.connection_vault_ref = normalizeDbTargetText(draft.connection_vault_ref);
+  draft.connection_env_var = normalizeDbTargetText(
+    draft.connection_env_var || buildDbTargetConnectionEnvVar(draft.target_id)
+  );
+  draft.allowed_tools = normalizeDbTargetAllowedTools(draft.allowed_tools);
+  draft.max_rows = Number.isFinite(Number(draft.max_rows)) ? Number(draft.max_rows) : 100;
+  draft.max_result_bytes = Number.isFinite(Number(draft.max_result_bytes))
+    ? Number(draft.max_result_bytes)
+    : 131072;
+  return normalizeDbTargetDraft(draft);
+}
+
+async function loadDbTargets() {
+  dbTargetsState.loading = true;
+  dbTargetsState.error = "";
+  try {
+    const payload = await apiJson("/api/db-targets");
+    dbTargetsState.items = Array.isArray(payload.targets)
+      ? payload.targets.map(item => normalizeDbTargetRecord(item))
+      : [];
+    dbTargetsState.runtimeExportPath = String(payload.runtime_export_path || "");
+
+    if (dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__") {
+      const selected = dbTargetsState.items.find(item => item.target_id === dbTargetsState.selectedId);
+      if (selected) {
+        dbTargetsState.draft = normalizeDbTargetDraft(cloneValue(selected));
+      } else {
+        startNewDbTarget();
+      }
+    } else if (!dbTargetsState.draft) {
+      if (dbTargetsState.items.length) {
+        selectDbTarget(dbTargetsState.items[0].target_id);
+      } else {
+        startNewDbTarget();
+      }
+    }
+  } catch (error) {
+    dbTargetsState.error = error.message;
+    dbTargetsState.items = [];
+    dbTargetsState.runtimeExportPath = "";
+  } finally {
+    dbTargetsState.loading = false;
+    renderDbTargetsPanel();
+  }
+}
+
+function renderDbTargetsPanel() {
+  if (!settingsDbTargetsSummary || !dbTargetsList || !dbTargetEditorForm || !dbTargetEditorMeta) {
+    return;
+  }
+
+  const count = dbTargetsState.items.length;
+  const exportText = dbTargetsState.runtimeExportPath
+    ? ` | export runtime: ${dbTargetsState.runtimeExportPath}`
+    : "";
+  settingsDbTargetsSummary.textContent = dbTargetsState.error
+    ? `Errore registry: ${dbTargetsState.error}`
+    : `${count} target registrati${exportText}`;
+
+  dbTargetsList.innerHTML = "";
+  if (dbTargetsState.loading) {
+    dbTargetsList.innerHTML = `<div class="vault-empty-state">Caricamento registry DB in corso...</div>`;
+  } else if (!count) {
+    dbTargetsList.innerHTML = `<div class="vault-empty-state">Nessun target DB registrato.</div>`;
+  } else {
+    for (const target of dbTargetsState.items) {
+      const selected = dbTargetsState.selectedId === target.target_id;
+      const binding = summarizeDbTargetBinding(target);
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = `db-target-card ${selected ? "active-card" : ""}`;
+      row.innerHTML = `
+        <div class="db-target-card-header">
+          <div>
+            <div class="db-target-card-title">${escapeHtml(target.display_name || target.target_id)}</div>
+            <div class="db-target-card-meta">${escapeHtml(target.target_id)}</div>
+          </div>
+          <div class="db-target-badge-row">
+            <span class="db-target-badge ${isDbTargetProd(target) ? "env-prod" : "env-nonprod"}">${escapeHtml(target.environment)}</span>
+            <span class="db-target-badge ${target.status === "active" ? "status-active" : "status-disabled"}">${escapeHtml(target.status)}</span>
+          </div>
+        </div>
+        <div class="db-target-card-meta">${escapeHtml(summarizeDbTargetPolicy(target))}</div>
+        <div class="db-target-card-meta">${escapeHtml(summarizeDbTargetLimits(target))}</div>
+        <div class="db-target-card-hint">${escapeHtml(binding.statusMessage)}</div>
+      `;
+      row.addEventListener("click", () => selectDbTarget(target.target_id));
+      dbTargetsList.appendChild(row);
+    }
+  }
+
+  const draft = getDbTargetDraft();
+  const selected = dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__";
+  const binding = summarizeDbTargetBinding(draft);
+  const prod = isDbTargetProd(draft);
+  dbTargetEditorMeta.textContent = selected
+    ? `${draft.target_id} | ${binding.statusMessage}`
+    : "Nuovo target DB. I target prod applicano hard fences non aggirabili lato backend/MCP.";
+
+  dbTargetEditorForm.innerHTML = `
+    <div class="db-target-editor-section">
+      <h4>Identità</h4>
+      <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetIdInput">Target ID</label>
+          <input id="dbTargetIdInput" data-db-target-field="target_id" type="text" value="${escapeHtml(draft.target_id)}" ${selected ? "disabled" : ""}>
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetNameInput">Display Name</label>
+          <input id="dbTargetNameInput" data-db-target-field="display_name" type="text" value="${escapeHtml(draft.display_name)}">
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetEnvironmentInput">Environment</label>
+          <input id="dbTargetEnvironmentInput" data-db-target-field="environment" type="text" value="${escapeHtml(draft.environment)}">
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetStatusInput">Status</label>
+          <select id="dbTargetStatusInput" data-db-target-field="status">
+            <option value="active" ${draft.status === "active" ? "selected" : ""}>active</option>
+            <option value="disabled" ${draft.status === "disabled" ? "selected" : ""}>disabled</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="db-target-editor-section">
+      <h4>Connessione</h4>
+      <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetVaultRefInput">Local Vault Ref</label>
+          <input id="dbTargetVaultRefInput" data-db-target-field="connection_vault_ref" type="text" value="${escapeHtml(draft.connection_vault_ref)}" placeholder="vault://db.prod.connection">
+          <div class="db-target-inline-hint">${escapeHtml(binding.statusMessage)}</div>
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetEnvVarInput">Runtime Env Var</label>
+          <input id="dbTargetEnvVarInput" data-db-target-field="connection_env_var" type="text" value="${escapeHtml(draft.connection_env_var)}">
+        </div>
+      </div>
+    </div>
+    <div class="db-target-editor-section">
+      <h4>Policy</h4>
+      <div class="db-target-field-grid">
+        <label class="settings-toggle"><input data-db-target-field="read_enabled" type="checkbox" ${draft.read_enabled ? "checked" : ""}>Read enabled</label>
+        <label class="settings-toggle"><input data-db-target-field="write_enabled" type="checkbox" ${draft.write_enabled ? "checked" : ""} ${prod ? "disabled" : ""}>Write enabled</label>
+        <label class="settings-toggle"><input data-db-target-field="anonymization_enabled" type="checkbox" ${draft.anonymization_enabled ? "checked" : ""} ${prod ? "disabled" : ""}>Anonymization enabled</label>
+      </div>
+      <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetAnonModeInput">Anonymization Mode</label>
+          <select id="dbTargetAnonModeInput" data-db-target-field="anonymization_mode" ${prod ? "disabled" : ""}>
+            ${["off", "deterministic", "hybrid", "llm-strict"].map(value => `<option value="${value}" ${draft.anonymization_mode === value ? "selected" : ""}>${value}</option>`).join("")}
+          </select>
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetProviderInput">Provider</label>
+          <select id="dbTargetProviderInput" data-db-target-field="llm_provider">
+            ${["none", "lmstudio", "ollama"].map(value => `<option value="${value}" ${draft.llm_provider === value ? "selected" : ""}>${value}</option>`).join("")}
+          </select>
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetModelInput">Model</label>
+          <input id="dbTargetModelInput" data-db-target-field="llm_model" type="text" value="${escapeHtml(draft.llm_model)}">
+        </div>
+      </div>
+      ${prod ? `<div class="db-target-inline-hint">Target prod: write OFF e anonymization ON sono hard-fenced lato backend/MCP.</div>` : ""}
+    </div>
+    <div class="db-target-editor-section">
+      <h4>Limiti e Tool</h4>
+      <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetMaxRowsInput">Max Rows</label>
+          <input id="dbTargetMaxRowsInput" data-db-target-field="max_rows" type="number" min="1" value="${escapeHtml(draft.max_rows)}">
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetMaxBytesInput">Max Result Bytes</label>
+          <input id="dbTargetMaxBytesInput" data-db-target-field="max_result_bytes" type="number" min="1" value="${escapeHtml(draft.max_result_bytes)}">
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetAllowedToolsInput">Allowed Tools</label>
+          <input id="dbTargetAllowedToolsInput" data-db-target-field="allowed_tools" type="text" value="${escapeHtml(draft.allowed_tools.join(", "))}">
+        </div>
+      </div>
+    </div>
+    <div class="db-target-editor-actions">
+      <button type="submit" class="btn-ok">${selected ? "Salva Target" : "Crea Target"}</button>
+      ${selected && draft.status === "active" ? '<button type="button" id="dbTargetDisableBtn" class="btn-warn">Disabilita</button>' : ""}
+      ${selected && draft.status === "disabled" ? '<button type="button" id="dbTargetEnableBtn">Riattiva</button>' : ""}
+    </div>
+  `;
+
+  dbTargetEditorForm.querySelectorAll("[data-db-target-field]").forEach(input => {
+    input.addEventListener("input", handleDbTargetDraftChange);
+    input.addEventListener("change", handleDbTargetDraftChange);
+  });
+  dbTargetEditorForm.addEventListener("submit", saveDbTargetFromEditor);
+  dbTargetEditorForm.querySelector("#dbTargetDisableBtn")?.addEventListener("click", disableSelectedDbTarget);
+  dbTargetEditorForm.querySelector("#dbTargetEnableBtn")?.addEventListener("click", enableSelectedDbTarget);
+}
+
+function handleDbTargetDraftChange(event) {
+  const field = event.target?.dataset?.dbTargetField;
+  if (!field) {
+    return;
+  }
+
+  const draft = cloneValue(getDbTargetDraft());
+  if (event.target.type === "checkbox") {
+    draft[field] = Boolean(event.target.checked);
+  } else {
+    draft[field] = event.target.value;
+  }
+
+  if (field === "target_id" && !draft.connection_env_var) {
+    draft.connection_env_var = buildDbTargetConnectionEnvVar(event.target.value);
+  }
+
+  setDbTargetDraft(draft);
+  renderDbTargetsPanel();
+}
+
+async function saveDbTargetFromEditor(event) {
+  event.preventDefault();
+  const payload = collectDbTargetPayload();
+  if (!payload.target_id) {
+    window.alert("Il target_id è obbligatorio.");
+    return;
+  }
+
+  const method = dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__" ? "PUT" : "POST";
+  const url =
+    method === "PUT"
+      ? `/api/db-targets/${encodeURIComponent(dbTargetsState.selectedId)}`
+      : "/api/db-targets";
+
+  try {
+    const response = await apiJson(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ values: payload })
+    });
+    setSettingsFlash(`Target ${payload.target_id} salvato.`, "success");
+    if (response?.target) {
+      setDbTargetDraft(response.target, response.target.target_id);
+    }
+    await loadDbTargets();
+  } catch (error) {
+    setSettingsFlash(`Errore salvataggio target: ${error.message}`, "error");
+  }
+}
+
+async function disableSelectedDbTarget() {
+  if (!dbTargetsState.selectedId || dbTargetsState.selectedId === "__new__") {
+    return;
+  }
+  try {
+    await apiJson(`/api/db-targets/${encodeURIComponent(dbTargetsState.selectedId)}/disable`, { method: "POST" });
+    setSettingsFlash(`Target ${dbTargetsState.selectedId} disabilitato.`, "success");
+    await loadDbTargets();
+  } catch (error) {
+    setSettingsFlash(`Errore disabilitazione target: ${error.message}`, "error");
+  }
+}
+
+async function enableSelectedDbTarget() {
+  if (!dbTargetsState.selectedId || dbTargetsState.selectedId === "__new__") {
+    return;
+  }
+  try {
+    await apiJson(`/api/db-targets/${encodeURIComponent(dbTargetsState.selectedId)}/enable`, { method: "POST" });
+    setSettingsFlash(`Target ${dbTargetsState.selectedId} riattivato.`, "success");
+    await loadDbTargets();
+  } catch (error) {
+    setSettingsFlash(`Errore riattivazione target: ${error.message}`, "error");
+  }
 }
 
 async function loadServices() {
@@ -2821,8 +3356,11 @@ killAllBtn.addEventListener("click", killEmAll);
 settingsFab.addEventListener("click", () => toggleSettingsPanel());
 closeSettingsBtn.addEventListener("click", () => toggleSettingsPanel(false));
 settingsServicesTabBtn.addEventListener("click", () => setSettingsTab("services"));
+settingsDbTargetsTabBtn.addEventListener("click", () => setSettingsTab("db-targets"));
 settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
 settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
+dbTargetsReloadBtn?.addEventListener("click", () => loadDbTargets());
+dbTargetNewBtn?.addEventListener("click", startNewDbTarget);
 saveSettingsBtn.addEventListener("click", saveDashboardSettings);
 reloadAlertsBtn.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsAlerts(advancedServiceId)) {
@@ -2857,7 +3395,7 @@ async function boot() {
   await loadServices();
   renderCards();
 
-  const settingsResults = await Promise.allSettled([loadDashboardSettings(), loadVaultState()]);
+  const settingsResults = await Promise.allSettled([loadDashboardSettings(), loadVaultState(), loadDbTargets()]);
   for (const result of settingsResults) {
     if (result.status === "rejected") {
       console.warn("Dashboard bootstrap warning:", result.reason);
