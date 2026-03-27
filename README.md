@@ -99,6 +99,7 @@ La dashboard mantiene il modello di controllo e genera un export runtime dedicat
 
 Per `llm-memory`, il dashboard espone anche un proxy backend read-only verso la superficie admin locale del servizio.
 Questo evita letture dirette del database dal pannello e mantiene il confine pulito tra UI/control-plane e ownership del runtime `llm-memory`.
+Nel pannello avanzato del servizio `llm-memory` e' disponibile anche un tab `Memory` con summary runtime, audit trail filtrabile e lista progetti.
 
 ## Config servizi
 

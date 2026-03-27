@@ -1260,6 +1260,72 @@ tbody td {
   color: var(--accent);
 }
 
+.memory-admin-panel {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(10, 20, 34, 0.35);
+}
+
+.memory-admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.memory-admin-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.memory-admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.memory-admin-filters {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border: 1px solid #26425f;
+  border-radius: 12px;
+  background: rgba(8, 17, 28, 0.22);
+}
+
+.memory-admin-filters input {
+  min-width: 150px;
+}
+
+.memory-admin-table-pane {
+  margin-top: 10px;
+}
+
+.memory-admin-empty {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+#memoryAuditBody td:nth-child(1),
+#memoryProjectsBody td:nth-child(6) {
+  white-space: nowrap;
+}
+
+#memoryAuditBody td:nth-child(6) pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 0.8rem;
+  color: #d3dfea;
+}
+
 @media (max-width: 860px) {
   .topbar {
     flex-direction: column;
@@ -1270,6 +1336,10 @@ tbody td {
   }
 
   .advanced-actions {
+    width: 100%;
+  }
+
+  .memory-admin-filters {
     width: 100%;
   }
 
