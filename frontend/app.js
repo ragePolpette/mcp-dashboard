@@ -33,9 +33,11 @@ const advancedMeta = document.getElementById("advancedMeta");
 const tabOptionsBtn = document.getElementById("tabOptionsBtn");
 const tabLogsBtn = document.getElementById("tabLogsBtn");
 const tabInspectorBtn = document.getElementById("tabInspectorBtn");
+const tabMemoryBtn = document.getElementById("tabMemoryBtn");
 const advancedOptionsView = document.getElementById("advancedOptionsView");
 const advancedLogsView = document.getElementById("advancedLogsView");
 const advancedInspectorView = document.getElementById("advancedInspectorView");
+const advancedMemoryView = document.getElementById("advancedMemoryView");
 const tailInput = document.getElementById("tailInput");
 const filterLevel = document.getElementById("filterLevel");
 const filterEvent = document.getElementById("filterEvent");
@@ -61,6 +63,24 @@ const alertPanel = document.getElementById("alertPanel");
 const alertSummary = document.getElementById("alertSummary");
 const alertList = document.getElementById("alertList");
 const reloadAlertsBtn = document.getElementById("reloadAlertsBtn");
+const memoryAdminStatus = document.getElementById("memoryAdminStatus");
+const memoryAdminSummaryGrid = document.getElementById("memoryAdminSummaryGrid");
+const reloadMemoryAdminBtn = document.getElementById("reloadMemoryAdminBtn");
+const memoryAuditSummary = document.getElementById("memoryAuditSummary");
+const memoryAuditLimitInput = document.getElementById("memoryAuditLimitInput");
+const memoryAuditActionInput = document.getElementById("memoryAuditActionInput");
+const memoryAuditActorInput = document.getElementById("memoryAuditActorInput");
+const memoryAuditReasonInput = document.getElementById("memoryAuditReasonInput");
+const memoryAuditSinceInput = document.getElementById("memoryAuditSinceInput");
+const applyMemoryAuditBtn = document.getElementById("applyMemoryAuditBtn");
+const resetMemoryAuditBtn = document.getElementById("resetMemoryAuditBtn");
+const memoryAuditBody = document.getElementById("memoryAuditBody");
+const memoryProjectsSummary = document.getElementById("memoryProjectsSummary");
+const memoryProjectsLimitInput = document.getElementById("memoryProjectsLimitInput");
+const memoryProjectsWorkspaceInput = document.getElementById("memoryProjectsWorkspaceInput");
+const reloadMemoryProjectsBtn = document.getElementById("reloadMemoryProjectsBtn");
+const resetMemoryProjectsBtn = document.getElementById("resetMemoryProjectsBtn");
+const memoryProjectsBody = document.getElementById("memoryProjectsBody");
 
 const optionsPanel = document.getElementById("optionsPanel");
 const optionsForm = document.getElementById("optionsForm");
@@ -112,6 +132,7 @@ const metricsByService = new Map();
 const queriesByService = new Map();
 const activityByService = new Map();
 const alertsByService = new Map();
+const memoryAdminByService = new Map();
 const advancedFilters = { level: "", event: "", channel: "", source: "", text: "" };
 
 function clearTimer(timerId) {
@@ -247,6 +268,10 @@ function supportsInspector(serviceOrId) {
   return supportsQueryInspector(serviceOrId) || supportsActivity(serviceOrId);
 }
 
+function supportsMemoryAdmin(serviceOrId) {
+  return hasCapability(serviceOrId, "memory_admin");
+}
+
 function getServiceState(serviceId) {
   if (!stateByService.has(serviceId)) {
     stateByService.set(serviceId, {
@@ -303,6 +328,39 @@ function getServiceAlerts(serviceId) {
     });
   }
   return alertsByService.get(serviceId);
+}
+
+function defaultMemoryAdminState() {
+  return {
+    summary: null,
+    summaryError: "",
+    audit: {
+      count: 0,
+      limit: 50,
+      filters: {
+        action: "",
+        actor: "",
+        reason: "",
+        since: ""
+      },
+      items: []
+    },
+    auditError: "",
+    projects: {
+      count: 0,
+      limit: 50,
+      workspace_id: "",
+      items: []
+    },
+    projectsError: ""
+  };
+}
+
+function getMemoryAdminState(serviceId) {
+  if (!memoryAdminByService.has(serviceId)) {
+    memoryAdminByService.set(serviceId, defaultMemoryAdminState());
+  }
+  return memoryAdminByService.get(serviceId);
 }
 
 function effectiveRuntimeState(runtime, uiState = null) {
@@ -569,6 +627,9 @@ function compareServices(left, right) {
 function pickDefaultAdvancedTab(service, runtime) {
   const preference = String(preferenceValue("default_advanced_tab", "automatic") || "automatic");
   if (preference !== "automatic") {
+    if (preference === "memory" && !supportsMemoryAdmin(service)) {
+      return runtime?.running ? "logs" : "options";
+    }
     if (preference === "inspector" && !supportsInspector(service)) {
       return runtime?.running ? "logs" : "options";
     }
@@ -579,6 +640,9 @@ function pickDefaultAdvancedTab(service, runtime) {
   }
   if (!runtime?.running) {
     return "options";
+  }
+  if (supportsMemoryAdmin(service)) {
+    return "memory";
   }
   return "logs";
 }
@@ -638,6 +702,12 @@ function setAdvancedTab(tabName) {
       button: tabInspectorBtn,
       view: advancedInspectorView,
       enabled: supportsInspector(advancedServiceId)
+    },
+    {
+      name: "memory",
+      button: tabMemoryBtn,
+      view: advancedMemoryView,
+      enabled: supportsMemoryAdmin(advancedServiceId)
     }
   ];
 
@@ -859,6 +929,28 @@ function clearActivityRows() {
   }
 }
 
+function clearMemoryAuditRows() {
+  while (memoryAuditBody.firstChild) {
+    memoryAuditBody.removeChild(memoryAuditBody.firstChild);
+  }
+}
+
+function clearMemoryProjectRows() {
+  while (memoryProjectsBody.firstChild) {
+    memoryProjectsBody.removeChild(memoryProjectsBody.firstChild);
+  }
+}
+
+function appendEmptyTableRow(tbody, colSpan, text) {
+  const tr = document.createElement("tr");
+  const td = document.createElement("td");
+  td.colSpan = colSpan;
+  td.className = "memory-admin-empty";
+  td.textContent = text;
+  tr.appendChild(td);
+  tbody.appendChild(tr);
+}
+
 function queryMatchesAdvancedFilters(query) {
   if (advancedFilters.level) {
     const level = String(query?.level || "").toUpperCase();
@@ -895,6 +987,172 @@ function truncateText(text, maxLength = 180) {
 function compactPreviewText(text, maxLength = 120) {
   const singleLine = String(text || "").replace(/\s+/g, " ").trim();
   return truncateText(singleLine, maxLength);
+}
+
+function clampLimitValue(value, fallback = 50) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(500, Math.trunc(parsed)));
+}
+
+function renderMemoryAdminSummaryCards(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  memoryAdminSummaryGrid.innerHTML = "";
+
+  if (state.summaryError) {
+    memoryAdminSummaryGrid.appendChild(createSummaryCard("Errore", state.summaryError));
+    return;
+  }
+
+  const summary = state.summary;
+  if (!summary) {
+    memoryAdminSummaryGrid.appendChild(createSummaryCard("Summary", "n/d"));
+    return;
+  }
+
+  const counts = summary.counts || {};
+  const scopes = summary.scopes || {};
+  const settings = summary.settings || {};
+  const embedding = summary.embedding?.active_version || null;
+
+  const cards = [
+    ["Entries attive", String(counts.active_entries ?? "n/d")],
+    ["Entries invalidated", String(counts.invalidated_entries ?? "n/d")],
+    ["Projects", String(counts.projects_total ?? "n/d")],
+    ["Audit events", String(counts.audit_events_total ?? "n/d")],
+    ["Scope attivi", `Project ${scopes.project ?? "n/d"} | Workspace ${scopes.workspace ?? "n/d"} | Global ${scopes.global ?? "n/d"}`],
+    ["Settings", `Encryption ${settings.encryption_enabled ? "ON" : "OFF"} | Multi-project ${settings.multi_project_enabled ? "ON" : "OFF"}`],
+    [
+      "Embedding",
+      embedding
+        ? `${embedding.provider_id || "provider"} | ${embedding.model_id || "model"} | dim ${embedding.dimension ?? "n/d"}`
+        : "Nessuna versione attiva"
+    ],
+    ["Latest audit", summary.latest_audit_at ? formatTimestamp(summary.latest_audit_at) : "n/d"]
+  ];
+
+  for (const [label, value] of cards) {
+    memoryAdminSummaryGrid.appendChild(createSummaryCard(label, value));
+  }
+}
+
+function renderMemoryAuditTable(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  clearMemoryAuditRows();
+
+  if (state.auditError) {
+    memoryAuditSummary.textContent = `Errore audit: ${state.auditError}`;
+    appendEmptyTableRow(memoryAuditBody, 6, "Impossibile caricare l'audit trail.");
+    return;
+  }
+
+  const audit = state.audit || { count: 0, limit: 50, filters: {}, items: [] };
+  const filters = audit.filters || {};
+  const activeFilters = [filters.action, filters.actor, filters.reason, filters.since].filter(Boolean).length;
+  memoryAuditSummary.textContent = `Eventi: ${audit.count || 0} | Limit ${audit.limit || 50} | Filtri attivi ${activeFilters}`;
+
+  if (!Array.isArray(audit.items) || audit.items.length === 0) {
+    appendEmptyTableRow(memoryAuditBody, 6, "Nessun evento audit per i filtri correnti.");
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const item of audit.items) {
+    const tr = document.createElement("tr");
+
+    const timeTd = document.createElement("td");
+    timeTd.textContent = formatTimestamp(item.created_at || item.timestamp);
+    applyTooltip(timeTd, item.created_at || item.timestamp || "Timestamp non disponibile");
+
+    const actionTd = document.createElement("td");
+    actionTd.textContent = item.action || "n/d";
+
+    const actorTd = document.createElement("td");
+    actorTd.textContent = item.actor || "n/d";
+
+    const entryTd = document.createElement("td");
+    entryTd.textContent = item.entry_id || "n/d";
+
+    const reasonTd = document.createElement("td");
+    reasonTd.textContent = item.reason || "n/d";
+
+    const previewTd = document.createElement("td");
+    const previewPre = document.createElement("pre");
+    previewPre.className = "message-preview";
+    previewPre.textContent = item.payload_preview || "";
+    previewTd.appendChild(previewPre);
+
+    tr.append(timeTd, actionTd, actorTd, entryTd, reasonTd, previewTd);
+    frag.appendChild(tr);
+  }
+
+  memoryAuditBody.appendChild(frag);
+}
+
+function renderMemoryProjectsTable(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  clearMemoryProjectRows();
+
+  if (state.projectsError) {
+    memoryProjectsSummary.textContent = `Errore progetti: ${state.projectsError}`;
+    appendEmptyTableRow(memoryProjectsBody, 6, "Impossibile caricare i progetti.");
+    return;
+  }
+
+  const projects = state.projects || { count: 0, limit: 50, workspace_id: "", items: [] };
+  memoryProjectsSummary.textContent = `Progetti: ${projects.count || 0} | Limit ${projects.limit || 50}${projects.workspace_id ? ` | Workspace ${projects.workspace_id}` : ""}`;
+
+  if (!Array.isArray(projects.items) || projects.items.length === 0) {
+    appendEmptyTableRow(memoryProjectsBody, 6, "Nessun progetto disponibile per i filtri correnti.");
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const item of projects.items) {
+    const tr = document.createElement("tr");
+
+    const projectTd = document.createElement("td");
+    projectTd.textContent = item.project_id || "n/d";
+
+    const workspaceTd = document.createElement("td");
+    workspaceTd.textContent = item.workspace_id || "n/d";
+
+    const nameTd = document.createElement("td");
+    nameTd.textContent = item.display_name || "n/d";
+
+    const activeTd = document.createElement("td");
+    activeTd.textContent = String(item.active_entry_count ?? "n/d");
+
+    const totalTd = document.createElement("td");
+    totalTd.textContent = String(item.entry_count ?? "n/d");
+
+    const updatedTd = document.createElement("td");
+    updatedTd.textContent = formatTimestamp(item.updated_at);
+    applyTooltip(updatedTd, item.updated_at || "Timestamp non disponibile");
+
+    tr.append(projectTd, workspaceTd, nameTd, activeTd, totalTd, updatedTd);
+    frag.appendChild(tr);
+  }
+
+  memoryProjectsBody.appendChild(frag);
+}
+
+function renderMemoryAdminForAdvanced(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+
+  const state = getMemoryAdminState(serviceId);
+  const errors = [state.summaryError, state.auditError, state.projectsError].filter(Boolean);
+  memoryAdminStatus.textContent = errors.length
+    ? `Surface admin locale con errori: ${errors.join(" | ")}`
+    : "Surface admin locale raggiungibile.";
+
+  renderMemoryAdminSummaryCards(serviceId);
+  renderMemoryAuditTable(serviceId);
+  renderMemoryProjectsTable(serviceId);
 }
 
 function isDbQueryEvent(entry) {
@@ -1485,6 +1743,84 @@ async function apiJson(url, options = undefined) {
     throw new Error(detail);
   }
   return payload;
+}
+
+async function loadMemoryAdminSummary(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  try {
+    const payload = await apiJson(`/api/services/${serviceId}/memory-admin/summary`);
+    state.summary = payload.summary || null;
+    state.summaryError = "";
+  } catch (error) {
+    state.summary = null;
+    state.summaryError = error.message;
+  }
+}
+
+async function loadMemoryAdminAudit(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  const filters = state.audit?.filters || {};
+  const params = new URLSearchParams();
+  params.set("limit", String(clampLimitValue(state.audit?.limit, 50)));
+  if (filters.action) params.set("action", filters.action);
+  if (filters.actor) params.set("actor", filters.actor);
+  if (filters.reason) params.set("reason", filters.reason);
+  if (filters.since) params.set("since", filters.since);
+
+  try {
+    const payload = await apiJson(`/api/services/${serviceId}/memory-admin/audit?${params.toString()}`);
+    state.audit = payload.audit || { count: 0, limit: 50, filters: {}, items: [] };
+    state.auditError = "";
+  } catch (error) {
+    state.audit = {
+      ...(state.audit || {}),
+      count: 0,
+      items: []
+    };
+    state.auditError = error.message;
+  }
+}
+
+async function loadMemoryAdminProjects(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  const params = new URLSearchParams();
+  params.set("limit", String(clampLimitValue(state.projects?.limit, 50)));
+  if (state.projects?.workspace_id) {
+    params.set("workspace_id", state.projects.workspace_id);
+  }
+
+  try {
+    const payload = await apiJson(`/api/services/${serviceId}/memory-admin/projects?${params.toString()}`);
+    state.projects = payload.projects || { count: 0, limit: 50, workspace_id: "", items: [] };
+    state.projectsError = "";
+  } catch (error) {
+    state.projects = {
+      ...(state.projects || {}),
+      count: 0,
+      items: []
+    };
+    state.projectsError = error.message;
+  }
+}
+
+async function loadMemoryAdminAll(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  await Promise.all([
+    loadMemoryAdminSummary(serviceId),
+    loadMemoryAdminAudit(serviceId),
+    loadMemoryAdminProjects(serviceId)
+  ]);
 }
 
 async function loadDashboardStatus() {
@@ -3134,6 +3470,98 @@ function renderAdvancedInspectorTitles(service) {
   }
 }
 
+function syncMemoryAdminInputsFromState(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  const auditFilters = state.audit?.filters || {};
+
+  memoryAuditLimitInput.value = String(clampLimitValue(state.audit?.limit, 50));
+  memoryAuditActionInput.value = auditFilters.action || "";
+  memoryAuditActorInput.value = auditFilters.actor || "";
+  memoryAuditReasonInput.value = auditFilters.reason || "";
+  memoryAuditSinceInput.value = auditFilters.since || "";
+  memoryProjectsLimitInput.value = String(clampLimitValue(state.projects?.limit, 50));
+  memoryProjectsWorkspaceInput.value = state.projects?.workspace_id || "";
+}
+
+function syncMemoryAuditStateFromInputs(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  state.audit = {
+    ...(state.audit || {}),
+    limit: clampLimitValue(memoryAuditLimitInput.value, 50),
+    filters: {
+      action: String(memoryAuditActionInput.value || "").trim(),
+      actor: String(memoryAuditActorInput.value || "").trim(),
+      reason: String(memoryAuditReasonInput.value || "").trim(),
+      since: String(memoryAuditSinceInput.value || "").trim()
+    }
+  };
+}
+
+function syncMemoryProjectsStateFromInputs(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  state.projects = {
+    ...(state.projects || {}),
+    limit: clampLimitValue(memoryProjectsLimitInput.value, 50),
+    workspace_id: String(memoryProjectsWorkspaceInput.value || "").trim()
+  };
+}
+
+async function applyMemoryAuditFilters() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  syncMemoryAuditStateFromInputs(advancedServiceId);
+  await loadMemoryAdminAudit(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
+async function resetMemoryAuditFilters() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(advancedServiceId);
+  state.audit = {
+    ...(state.audit || {}),
+    limit: 50,
+    filters: {
+      action: "",
+      actor: "",
+      reason: "",
+      since: ""
+    }
+  };
+  syncMemoryAdminInputsFromState(advancedServiceId);
+  await loadMemoryAdminAudit(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
+async function reloadMemoryProjects() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  syncMemoryProjectsStateFromInputs(advancedServiceId);
+  await loadMemoryAdminProjects(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
+async function resetMemoryProjectsFilters() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(advancedServiceId);
+  state.projects = {
+    ...(state.projects || {}),
+    limit: 50,
+    workspace_id: ""
+  };
+  syncMemoryAdminInputsFromState(advancedServiceId);
+  await loadMemoryAdminProjects(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
 async function openAdvanced(serviceId) {
   advancedServiceId = serviceId;
   stopAdvancedStream();
@@ -3147,13 +3575,16 @@ async function openAdvanced(serviceId) {
     refreshServiceStatus(serviceId),
     loadServiceOptions(serviceId),
     refreshServiceMetrics(serviceId),
-    refreshServiceAlerts(serviceId)
+    refreshServiceAlerts(serviceId),
+    loadMemoryAdminAll(serviceId)
   ]);
 
   advancedTitle.textContent = `Dettaglio: ${service.name}`;
   renderAdvancedMeta(service);
   renderAdvancedInspectorTitles(service);
   renderOptionsForm(serviceId);
+  syncMemoryAdminInputsFromState(serviceId);
+  renderMemoryAdminForAdvanced(serviceId);
   advancedPanel.classList.remove("hidden");
   setAdvancedTab(pickDefaultAdvancedTab(service, getRuntimeStatus(serviceId)));
 
@@ -3201,7 +3632,13 @@ async function openAdvanced(serviceId) {
   } else {
     alertPanel.classList.add("hidden");
   }
+  if (supportsMemoryAdmin(service)) {
+    renderMemoryAdminForAdvanced(serviceId);
+  }
   if (!supportsInspector(service) && advancedActiveTab === "inspector") {
+    setAdvancedTab("logs");
+  }
+  if (!supportsMemoryAdmin(service) && advancedActiveTab === "memory") {
     setAdvancedTab("logs");
   }
   renderCards();
@@ -3219,7 +3656,8 @@ async function reloadAdvanced() {
     refreshServiceMetrics(advancedServiceId),
     refreshServiceAlerts(advancedServiceId),
     loadServiceQueries(advancedServiceId, Math.max(tail * 8, 500)),
-    loadServiceActivity(advancedServiceId, Math.max(tail * 8, 500))
+    loadServiceActivity(advancedServiceId, Math.max(tail * 8, 500)),
+    loadMemoryAdminAll(advancedServiceId)
   ]);
 
   const service = services.find(s => s.id === advancedServiceId);
@@ -3243,6 +3681,10 @@ async function reloadAdvanced() {
   }
   if (supportsAlerts(advancedServiceId)) {
     renderAlertsForAdvanced(advancedServiceId);
+  }
+  if (supportsMemoryAdmin(advancedServiceId)) {
+    syncMemoryAdminInputsFromState(advancedServiceId);
+    renderMemoryAdminForAdvanced(advancedServiceId);
   }
   renderCards();
 }
@@ -3302,6 +3744,11 @@ tabLogsBtn.addEventListener("click", () => setAdvancedTab("logs"));
 tabInspectorBtn.addEventListener("click", () => {
   if (supportsInspector(advancedServiceId)) {
     setAdvancedTab("inspector");
+  }
+});
+tabMemoryBtn.addEventListener("click", () => {
+  if (supportsMemoryAdmin(advancedServiceId)) {
+    setAdvancedTab("memory");
   }
 });
 applyFilterBtn.addEventListener("click", async () => {
@@ -3370,6 +3817,19 @@ reloadAlertsBtn.addEventListener("click", async () => {
   renderAlertsForAdvanced(advancedServiceId);
   renderCards();
 });
+reloadMemoryAdminBtn?.addEventListener("click", async () => {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  syncMemoryAuditStateFromInputs(advancedServiceId);
+  syncMemoryProjectsStateFromInputs(advancedServiceId);
+  await loadMemoryAdminAll(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+});
+applyMemoryAuditBtn?.addEventListener("click", applyMemoryAuditFilters);
+resetMemoryAuditBtn?.addEventListener("click", resetMemoryAuditFilters);
+reloadMemoryProjectsBtn?.addEventListener("click", reloadMemoryProjects);
+resetMemoryProjectsBtn?.addEventListener("click", resetMemoryProjectsFilters);
 reloadQueriesBtn.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsQueryInspector(advancedServiceId)) {
     return;
