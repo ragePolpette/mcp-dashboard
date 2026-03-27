@@ -21,6 +21,7 @@ from .db_target_registry import DbTargetRegistry
 from .dashboard_settings import DashboardSettingsManager
 from .log_pipeline import LogPipeline
 from .log_rules import LogRuleEngine
+from .memory_admin_client import MemoryAdminClient, MemoryAdminProxyError
 from .process_manager import ServiceProcessManager
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 from .service_options import ServiceOptionsManager
@@ -56,6 +57,7 @@ db_target_registry = DbTargetRegistry(
     DB_TARGETS_BOOTSTRAP,
     vault=vault_manager,
 )
+memory_admin_client = MemoryAdminClient()
 
 
 @asynccontextmanager
@@ -119,6 +121,16 @@ def _runtime_env_overrides(service) -> dict[str, str]:
         overrides.update(db_target_registry.runtime_env())
     overrides.update(options_manager.options_env(service))
     return overrides
+
+
+def _memory_admin_service_or_400(service_id: str):
+    service = _service_or_404(service_id)
+    if "memory_admin" not in service.capabilities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Service {service_id} does not expose the memory admin proxy surface.",
+        )
+    return service
 
 
 def _parse_entry_timestamp(value: Any) -> datetime | None:
@@ -710,6 +722,57 @@ def list_services() -> list[dict[str, Any]]:
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     return process_manager.status(service)
+
+
+@app.get("/api/services/{service_id}/memory-admin/summary")
+def service_memory_admin_summary(service_id: str) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_summary(service)
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.get("/api/services/{service_id}/memory-admin/audit")
+def service_memory_admin_audit(
+    service_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    entry_id: str | None = Query(default=None),
+    action: str | None = Query(default=None),
+    actor: str | None = Query(default=None),
+    reason: str | None = Query(default=None),
+    since: str | None = Query(default=None),
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_audit(
+            service,
+            limit=limit,
+            entry_id=entry_id,
+            action=action,
+            actor=actor,
+            reason=reason,
+            since=since,
+        )
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.get("/api/services/{service_id}/memory-admin/projects")
+def service_memory_admin_projects(
+    service_id: str,
+    limit: int = Query(default=200, ge=1, le=500),
+    workspace_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_projects(
+            service,
+            limit=limit,
+            workspace_id=workspace_id,
+        )
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 def _schedule_dashboard_shutdown(delay_seconds: float = 0.35) -> None:
