@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MCP Dashboard - Widget Board</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260324a">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260327a">
 </head>
 <body>
   <main class="layout">
@@ -33,6 +33,7 @@
         <button id="tabOptionsBtn" class="advanced-tab active" type="button" role="tab" aria-selected="true">Opzioni</button>
         <button id="tabLogsBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Log</button>
         <button id="tabInspectorBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Inspector</button>
+        <button id="tabMemoryBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Memory</button>
       </div>
 
       <section id="advancedOptionsView" class="advanced-view">
@@ -156,6 +157,91 @@
           </div>
         </section>
       </section>
+
+      <section id="advancedMemoryView" class="advanced-view hidden">
+        <section class="memory-admin-panel">
+          <div class="memory-admin-header">
+            <div>
+              <h3>Memory Admin</h3>
+              <p id="memoryAdminStatus" class="muted">Surface non caricata.</p>
+            </div>
+            <div class="memory-admin-actions">
+              <button id="reloadMemoryAdminBtn" type="button">Ricarica Dati</button>
+            </div>
+          </div>
+          <div id="memoryAdminSummaryGrid" class="advanced-summary-grid"></div>
+        </section>
+
+        <section class="memory-admin-panel">
+          <div class="memory-admin-header">
+            <div>
+              <h3>Audit Trail</h3>
+              <p id="memoryAuditSummary" class="muted">Nessun audit caricato.</p>
+            </div>
+          </div>
+          <div class="memory-admin-filters">
+            <label for="memoryAuditLimitInput">Limit</label>
+            <input id="memoryAuditLimitInput" type="number" value="50" min="1" max="500">
+            <label for="memoryAuditActionInput">Action</label>
+            <input id="memoryAuditActionInput" type="text" placeholder="export, import, add">
+            <label for="memoryAuditActorInput">Actor</label>
+            <input id="memoryAuditActorInput" type="text" placeholder="agent-id">
+            <label for="memoryAuditReasonInput">Reason</label>
+            <input id="memoryAuditReasonInput" type="text" placeholder="manual_export">
+            <label for="memoryAuditSinceInput">Since</label>
+            <input id="memoryAuditSinceInput" type="text" placeholder="2026-03-26T10:00:00Z">
+            <button id="applyMemoryAuditBtn" type="button">Applica Audit</button>
+            <button id="resetMemoryAuditBtn" type="button">Reset Audit</button>
+          </div>
+          <div class="query-pane memory-admin-table-pane">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Action</th>
+                  <th>Actor</th>
+                  <th>Entry</th>
+                  <th>Reason</th>
+                  <th>Preview</th>
+                </tr>
+              </thead>
+              <tbody id="memoryAuditBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="memory-admin-panel">
+          <div class="memory-admin-header">
+            <div>
+              <h3>Projects</h3>
+              <p id="memoryProjectsSummary" class="muted">Nessun progetto caricato.</p>
+            </div>
+          </div>
+          <div class="memory-admin-filters">
+            <label for="memoryProjectsLimitInput">Limit</label>
+            <input id="memoryProjectsLimitInput" type="number" value="50" min="1" max="500">
+            <label for="memoryProjectsWorkspaceInput">Workspace</label>
+            <input id="memoryProjectsWorkspaceInput" type="text" placeholder="workspace-id">
+            <button id="reloadMemoryProjectsBtn" type="button">Ricarica Progetti</button>
+            <button id="resetMemoryProjectsBtn" type="button">Reset Progetti</button>
+          </div>
+          <div class="query-pane memory-admin-table-pane">
+            <table>
+              <thead>
+                <tr>
+                  <th>Project</th>
+                  <th>Workspace</th>
+                  <th>Name</th>
+                  <th>Active</th>
+                  <th>Total</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="memoryProjectsBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
     </section>
 
     <button id="settingsFab" class="settings-fab" type="button" aria-label="Impostazioni dashboard">⚙</button>
@@ -230,7 +316,7 @@
     </section>
   </main>
 
-  <script src="/assets/app.js?v=20260324a"></script>
+  <script src="/assets/app.js?v=20260327a"></script>
 </body>
 </html>
 
