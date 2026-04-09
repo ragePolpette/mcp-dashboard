@@ -67,11 +67,18 @@ class LogPipeline:
                 signature.append((str(source.path), False, None, None))
         return tuple(signature)
 
-    def prune_old_logs(self, services: list[ServiceDefinition], *, retention_days: int = DEFAULT_LOG_RETENTION_DAYS) -> list[str]:
+    def prune_old_logs(
+        self,
+        services: list[ServiceDefinition],
+        *,
+        retention_days: int = DEFAULT_LOG_RETENTION_DAYS,
+        now: datetime | None = None,
+    ) -> list[str]:
         if retention_days <= 0:
             return []
 
-        cutoff = datetime.now().astimezone().timestamp() - (retention_days * 86400)
+        reference_time = now.astimezone() if now is not None else datetime.now().astimezone()
+        cutoff = reference_time.timestamp() - (retention_days * 86400)
         pruned: list[str] = []
         seen: set[str] = set()
 
