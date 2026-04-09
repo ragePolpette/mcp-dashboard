@@ -67,9 +67,9 @@ def test_registry_parses_control_block():
 def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        config_dir = tmp_dir / "Binah" / "mcp-dashboard" / "backend" / "config"
+        config_dir = tmp_dir / "deploy-runtime" / "mcp-dashboard" / "backend" / "config"
         config_dir.mkdir(parents=True)
-        runtime_log = tmp_dir / "Binah" / "tools" / "_runtime_logs" / "svc.out.log"
+        runtime_log = tmp_dir / "deploy-runtime" / "tools" / "_runtime_logs" / "svc.out.log"
         runtime_log.parent.mkdir(parents=True)
         runtime_log.write_text("runtime-line\n", encoding="utf-8")
 
@@ -91,7 +91,7 @@ def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
                             {
                                 "path": "../../../tools/_runtime_logs/svc.out.log",
                                 "channel": "stdout",
-                                "tags": ["runtime", "binah"],
+                                "tags": ["runtime", "deploy-runtime"],
                             },
                             {
                                 "path": "../../../tools/_dev_runtime_logs/svc.out.log",
@@ -118,9 +118,9 @@ def test_registry_runtime_mode_prefers_runtime_logs_and_runtime_log_paths():
 def test_registry_runtime_mode_falls_back_to_legacy_runtime_logs_when_needed():
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
-        config_dir = tmp_dir / "Binah" / "mcp-dashboard" / "backend" / "config"
+        config_dir = tmp_dir / "deploy-runtime" / "mcp-dashboard" / "backend" / "config"
         config_dir.mkdir(parents=True)
-        legacy_log = tmp_dir / "Binah" / "tools" / "_dev_runtime_logs" / "svc.out.log"
+        legacy_log = tmp_dir / "deploy-runtime" / "tools" / "_dev_runtime_logs" / "svc.out.log"
         legacy_log.parent.mkdir(parents=True)
         legacy_log.write_text("legacy-line\n", encoding="utf-8")
 
@@ -141,7 +141,7 @@ def test_registry_runtime_mode_falls_back_to_legacy_runtime_logs_when_needed():
                             {
                                 "path": "../../../tools/_runtime_logs/svc.out.log",
                                 "channel": "stdout",
-                                "tags": ["runtime", "binah"],
+                                "tags": ["runtime", "deploy-runtime"],
                             },
                             {
                                 "path": "../../../tools/_dev_runtime_logs/svc.out.log",
@@ -160,7 +160,7 @@ def test_registry_runtime_mode_falls_back_to_legacy_runtime_logs_when_needed():
         assert service is not None
         assert len(service.log_sources) == 1
         assert "runtime" in service.log_sources[0].tags
-        assert "binah" in service.log_sources[0].tags
+        assert "deploy-runtime" in service.log_sources[0].tags
         assert "legacy-runtime" in service.log_sources[0].tags
         assert "dev" not in service.log_sources[0].tags
 
@@ -379,3 +379,4 @@ def test_start_redirects_stdout_and_stderr_to_logs():
 
         stop = manager.stop(service)
         assert stop["ok"] is True
+

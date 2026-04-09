@@ -25,7 +25,7 @@ def _project_root(base_dir: Path) -> Path:
 
 
 def _is_runtime_project(base_dir: Path) -> bool:
-    return _project_root(base_dir).name.lower() == "binah"
+    return _project_root(base_dir).name.lower() == "deploy-runtime"
 
 
 def _runtime_log_path(path: Path) -> Path:
@@ -36,7 +36,7 @@ def _is_runtime_log_source(source: ServiceLogSource) -> bool:
     tags = {str(tag).strip().lower() for tag in source.tags}
     if "service-log" in tags:
         return True
-    return "runtime" in tags or "binah" in tags
+    return "runtime" in tags or "deploy-runtime" in tags
 
 
 def _is_legacy_runtime_log_source(source: ServiceLogSource) -> bool:
@@ -48,8 +48,8 @@ def _promote_legacy_runtime_source(source: ServiceLogSource) -> ServiceLogSource
     normalized = {tag.strip().lower() for tag in tags}
     if "runtime" not in normalized:
         tags.append("runtime")
-    if "binah" not in normalized:
-        tags.append("binah")
+    if "deploy-runtime" not in normalized:
+        tags.append("deploy-runtime")
     if "legacy-runtime" not in normalized:
         tags.append("legacy-runtime")
     return ServiceLogSource(path=source.path, channel=source.channel, tags=tags)

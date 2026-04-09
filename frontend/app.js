@@ -493,7 +493,7 @@ function sourceScopeTooltip(scope) {
     return "DEV: log letti dall'ambiente di sviluppo Yetzirah";
   }
   if (normalized === "RUNTIME") {
-    return "RUNTIME: log letti dall'ambiente di deploy Binah";
+    return "RUNTIME: log letti dall'ambiente di deploy deploy-runtime";
   }
   if (normalized === "SERVICE") {
     return "SERVICE: log scritti direttamente dal servizio";
@@ -3876,6 +3876,7 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
+
 
 
 
