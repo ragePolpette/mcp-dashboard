@@ -1,137 +1,106 @@
-# MCP Dashboard (Logs + Control v3)
+# MCP Dashboard
 
-Questo progetto e' destinato a vivere come **repository standalone** dentro il workspace DEV `Yetzirah`.
-Il runtime locale, quando deployato, resta in `Binah\mcp-dashboard`.
+MCP Dashboard is a local control plane for managing and observing a workstation-scale MCP stack from one place.
 
-Dashboard web locale per monitoring e controllo servizi MCP:
+It combines service lifecycle control, structured log inspection, secret-aware runtime options, a local vault, and SQL target registry management in a single dashboard. The project is part of the broader Yetzirah toolchain and is designed for local-first developer environments rather than multi-tenant cloud deployment.
 
-- vista widget con tutti i servizi nella stessa schermata
-- stato runtime per servizio (running/stopped/pid/porta)
-- azioni `Start`, `Stop`, `Restart` da UI
-- opzioni pre-avvio per servizio
-- gestione opzioni `secret` (es. connection string DB) non esposte in chiaro in API/UI e non salvate su disco
-- vault locale persistente per segreti riusabili via riferimenti `vault://...`
-- registry `DB Targets` per target SQL runtime-editable con export verso `llm-sql-db-mcp`
-- pannello `Avanzate` con log dettagliati e stream SSE
-- pipeline log estensibile (sources + parser chain + rules)
+## What It Does
 
-## Avvio
+- starts, stops, and restarts MCP services from the UI
+- shows runtime state per service, including pid, port, and health
+- streams and filters normalized logs from multiple service-specific parsers
+- stores reusable local secrets through `vault://` references without exposing cleartext values in the UI
+- manages runtime-editable SQL targets exported for `llm-sql-db-mcp`
+- exposes read-only admin views for `llm-memory`
 
-```powershell
-pwsh -ExecutionPolicy Bypass -File C:\Users\Gianmarco\Urgewalt\Yetzirah\tools\start-dashboard.ps1
+## Architecture
+
+The dashboard is split into two layers:
+
+- `backend/`: FastAPI control plane for service management, log ingestion, vault handling, DB target registry, and service-specific proxy endpoints
+- `frontend/`: lightweight browser UI for widgets, advanced inspection panels, settings, and operator actions
+
+The backend owns service orchestration and filesystem state under `runtime/`. The frontend stays intentionally thin and consumes the backend API surface.
+
+## Key Capabilities
+
+- Service control: start, stop, restart, and status endpoints for registered services
+- Log pipeline: parser chain plus rule engine for enriched events, alerts, and UI filtering
+- Secret management: in-memory secret options and persistent local vault references
+- DB target registry: runtime editing and export for policy-driven SQL MCP services
+- Memory admin proxy: summary, audit, and project views for `llm-memory`
+
+## Project Layout
+
+```text
+mcp-dashboard/
+├── backend/
+│   ├── app/
+│   └── config/
+├── frontend/
+├── runtime/
+├── tests/
+└── start-dashboard.ps1
 ```
 
-Script canonico di avvio: [start-dashboard.ps1](/C:/Users/Gianmarco/Urgewalt/Yetzirah/tools/start-dashboard.ps1)
+## Run Locally
 
-La copia Desktop [Avvia_MCP_Dashboard_Binah.bat](/C:/Users/Gianmarco/Desktop/Avvia_MCP_Dashboard_Binah.bat) e' solo un wrapper di comodita': deve limitarsi ad aprire la dashboard usando lo script canonico in `Yetzirah\tools`, senza logica locale duplicata.
+Requirements:
 
-Di default la dashboard parte senza `--reload`, per evitare processi reloader appesi e rendere il lifecycle piu prevedibile.
-Per hot reload esplicito in sviluppo:
+- Python 3.11+
+- `fastapi`, `uvicorn`, and backend requirements from `backend/requirements.txt`
+
+Quick start on Windows:
 
 ```powershell
-pwsh -ExecutionPolicy Bypass -File C:\Users\Gianmarco\Urgewalt\Yetzirah\tools\start-dashboard.ps1 -Reload
+pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1
 ```
 
-Su Windows, il comportamento di shutdown verificato da questo repository e' validato con PowerShell 7 (`pwsh`).
-Lo script resta avviabile anche da `powershell.exe`, ma il caso di terminazione brutale del processo padre e' stato verificato solo con `pwsh`.
+Optional hot reload:
 
-Endpoint:
+```powershell
+pwsh -ExecutionPolicy Bypass -File .\start-dashboard.ps1 -Reload
+```
+
+Default endpoints:
+
 - UI: `http://127.0.0.1:8790/`
-- API health: `http://127.0.0.1:8790/health`
+- Health: `http://127.0.0.1:8790/health`
 
-## API controllo servizi
+## Main API Surface
 
 - `GET /api/services`
 - `GET /api/services/{service_id}/status`
 - `POST /api/services/{service_id}/start`
 - `POST /api/services/{service_id}/stop`
 - `POST /api/services/{service_id}/restart`
-
-## API opzioni pre-avvio
-
-- `GET /api/services/{service_id}/options`
-- `POST /api/services/{service_id}/options`
-
-## API vault e DB targets
-
+- `GET /api/services/{service_id}/logs`
 - `GET /api/vault`
-- `POST /api/vault/init`
-- `POST /api/vault/unlock`
-- `POST /api/vault/lock`
-- `POST /api/vault/entries`
-- `DELETE /api/vault/entries`
 - `GET /api/db-targets`
-- `GET /api/db-targets/{target_id}`
-- `POST /api/db-targets`
-- `PUT /api/db-targets/{target_id}`
-- `POST /api/db-targets/{target_id}/disable`
-- `POST /api/db-targets/{target_id}/enable`
-- `GET /api/services/llm-memory/memory-admin/summary`
-- `GET /api/services/llm-memory/memory-admin/audit`
-- `GET /api/services/llm-memory/memory-admin/projects`
 
-Le opzioni non secret vengono salvate in `runtime/service_options.json` e applicate al prossimo `Start/Restart`.
-Le opzioni `secret` restano solo in memoria del backend dashboard finche' la dashboard resta attiva e non vengono mai salvate su disco.
-I servizi avviati dalla dashboard partono con terminale nascosto; stdout/stderr vengono rediretti ai file log configurati e sono consultabili dal pannello `Avanzate`.
-Nel pannello `Avanzate` puoi filtrare i log per:
-- `Level`
-- `Event`
-- `Channel` (`stdout` / `stderr`)
-- `Source` (file log specifico, ad esempio `DEV`, `RUNTIME`, `SERVICE`)
+## Status
 
-## Punto 3 (DB dev/prod)
+This repository is in active development. The current codebase is already usable as a local operations dashboard for MCP services, but the public-facing documentation and visual presentation are still being refined.
 
-Configurate opzioni secret per:
-- `llm-db-dev-mcp` -> `DB_DEV_CONNECTION_STRING`
-- `llm-db-prod-mcp` -> `DB_PROD_CONNECTION_STRING`
+The current emphasis is on:
 
-Nel pannello `Avanzate`:
-- inserisci la connection string
-- `Salva Opzioni`
-- esegui `Restart` del servizio DB
+- operational clarity for local service stacks
+- safer runtime configuration handling
+- structured observability for MCP-oriented workflows
 
-Le opzioni secret non vengono restituite in chiaro; viene mostrato solo se il valore e' impostato.
-Se fai `Restart` dalla stessa dashboard web/backend, la connection string resta disponibile in memoria.
-Se riavvii la dashboard, la devi reinserire.
+## Notes
 
-Con il registry `DB Targets`, `llm-sql-db-mcp` non dipende piu da una lista rigida di target hardcoded nelle opzioni del servizio.
-La dashboard mantiene il modello di controllo e genera un export runtime dedicato consumato dal server SQL MCP.
+- This project is local-first and workstation-oriented by design.
+- Secret values are never returned in cleartext once stored through the dashboard flows.
+- The log pipeline is intentionally extensible so new service parsers and rule sets can be added without redesigning the UI.
 
-Per `llm-memory`, il dashboard espone anche un proxy backend read-only verso la superficie admin locale del servizio.
-Questo evita letture dirette del database dal pannello e mantiene il confine pulito tra UI/control-plane e ownership del runtime `llm-memory`.
-Nel pannello avanzato del servizio `llm-memory` e' disponibile anche un tab `Memory` con summary runtime, audit trail filtrabile e lista progetti.
+## Related Repositories
 
-## Config servizi
+- `llm-memory`
+- `llm_context`
+- `llm-bitbucket-mcp`
+- `llm-sql-db-mcp`
 
-File principali:
-- `backend/config/services.json`
-- `backend/config/services.example.json`
-- `backend/config/log_rules.json`
+## Development Process
 
-Per abilitare controllo su un servizio aggiungere `control`:
-- `workdir`
-- `start_command` (array di argomenti)
-- `host` / `port` (opzionali ma consigliati)
-- `pid_file`, `stdout_log`, `stderr_log` (consigliati)
-- `env` (opzionale)
-- `options` (opzionale) con campi:
-  - `id`, `label`, `type`, `env_var`, `default`
-  - `secret` per valori sensibili
-
-## Log estensibili
-
-Per nuove voci log applicative:
-1. aggiorna source/parsers in `services.json`
-2. aggiungi regole in `log_rules.json`
-3. riavvia dashboard
-
-La UI renderizza automaticamente i campi extra in `meta`.
-
-Note operative:
-- il widget `LLM Context` usa un trend basato sugli eventi reali `context.retrieved`, non sul solo volume generico di log
-- i servizi con `health_url` configurata mostrano uno stato runtime piu affidabile (`Running`, `Unhealthy`)
-- durante azioni da UI lo stato operativo espone anche transizioni esplicite (`Starting`, `Stopping`, `Restarting`)
-
-Dettagli:
-- `docs/LOG_PIPELINE_SPEC.md`
-- `docs/db-target-registry-migration.md`
+Built with AI-assisted workflows, while architecture, tradeoffs, integration, review, and validation were directed by the author.
