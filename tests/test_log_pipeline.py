@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 
@@ -140,7 +140,11 @@ def test_prune_old_logs_removes_entries_older_than_retention_window():
             rule_sets=[],
         )
 
-        pruned = pipeline.prune_old_logs([service], retention_days=15)
+        pruned = pipeline.prune_old_logs(
+            [service],
+            retention_days=15,
+            now=datetime(2026, 3, 25, 0, 0, 0, tzinfo=timezone.utc),
+        )
 
         assert str(log_path.resolve()) in pruned
         final_text = log_path.read_text(encoding="utf-8")
