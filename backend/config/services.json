@@ -52,19 +52,19 @@
       },
       "log_sources": [
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-context.err.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-context.err.log",
           "channel": "stderr",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-context.out.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-context.out.log",
           "channel": "stdout",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
@@ -258,19 +258,19 @@
       },
       "log_sources": [
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-memory.err.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-memory.err.log",
           "channel": "stderr",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-memory.out.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-memory.out.log",
           "channel": "stdout",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
@@ -349,19 +349,19 @@
       },
       "log_sources": [
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-db-dev-mcp.err.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-db-dev-mcp.err.log",
           "channel": "stderr",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-db-dev-mcp.out.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-db-dev-mcp.out.log",
           "channel": "stdout",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
@@ -442,19 +442,19 @@
       },
       "log_sources": [
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-db-prod-mcp.err.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-db-prod-mcp.err.log",
           "channel": "stderr",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-db-prod-mcp.out.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-db-prod-mcp.out.log",
           "channel": "stdout",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
@@ -590,19 +590,19 @@
       },
       "log_sources": [
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-sql-db-mcp.err.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-sql-db-mcp.err.log",
           "channel": "stderr",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
-          "path": "../../../../Binah/tools/_runtime_logs/llm-sql-db-mcp.out.log",
+          "path": "../../../../deploy-runtime/tools/_runtime_logs/llm-sql-db-mcp.out.log",
           "channel": "stdout",
           "tags": [
             "runtime",
-            "binah"
+            "deploy-runtime"
           ]
         },
         {
@@ -710,3 +710,4 @@
     }
   ]
 }
+
