@@ -13,6 +13,19 @@ It combines service lifecycle control, structured log inspection, secret-aware r
 - manages runtime-editable SQL targets exported for `llm-sql-db-mcp`
 - exposes read-only admin views for `llm-memory`
 
+## Security Model
+
+This dashboard is designed to make local operator workflows safer without pretending to be a cloud secret-management platform.
+
+The key ideas are:
+
+- services can consume `vault://` references instead of hardcoded secrets
+- the UI works with secret-aware runtime options rather than round-tripping cleartext values
+- the local vault persists references and encrypted local state instead of normalizing secret sprawl across config files
+- operators can manage local service orchestration and secret-backed runtime settings from the same control plane
+
+The goal is to reduce accidental leakage in day-to-day workstation operations while keeping the operator experience practical.
+
 ## Architecture
 
 The dashboard is split into two layers:
@@ -93,6 +106,12 @@ The current emphasis is on:
 - This project is local-first and workstation-oriented by design.
 - Secret values are never returned in cleartext once stored through the dashboard flows.
 - The log pipeline is intentionally extensible so new service parsers and rule sets can be added without redesigning the UI.
+
+## Production Note
+
+This repository explores a local-first control-plane approach to service orchestration, secret references, and vault-backed runtime resolution.
+
+For production environments, I would generally lean on established secret-management platforms or managed secret workflows unless there is a strong operational reason to own that layer directly. The value of this project is in the control-plane design, operator workflow, and local integration model rather than in replacing mature enterprise secret platforms.
 
 ## Related Repositories
 
