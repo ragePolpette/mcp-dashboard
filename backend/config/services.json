@@ -24,7 +24,7 @@
         "llm-context"
       ],
       "control": {
-        "workdir": "../../../llm_context",
+        "workdir": "../../../llm_context_rework",
         "start_command": [
           "python",
           "-u",
@@ -33,11 +33,71 @@
         "host": "127.0.0.1",
         "port": 8765,
         "health_url": "http://127.0.0.1:8765/health",
-        "startup_timeout_sec": 60,
+        "startup_timeout_sec": 120,
         "pid_file": "../../runtime/pids/llm-context.pid",
         "stdout_log": "../../../tools/_dev_runtime_logs/llm-context.out.log",
         "stderr_log": "../../../tools/_dev_runtime_logs/llm-context.err.log",
         "options": [
+          {
+            "id": "llm_context_dsn",
+            "label": "LLM Context PostgreSQL DSN",
+            "secret": true,
+            "type": "string",
+            "env_var": "LLM_CONTEXT_DSN",
+            "description": "DSN PostgreSQL del runtime llm-context. Supporta DB locale, cloud/remoto o Docker; il servizio usa solo il DSN runtime.",
+            "required": true,
+            "default": ""
+          },
+          {
+            "id": "llm_context_config_path",
+            "label": "Config Path",
+            "secret": false,
+            "type": "string",
+            "env_var": "LLM_CONTEXT_CONFIG_PATH",
+            "description": "Profilo runtime di llm-context. Default: config.rework.yaml nella root del repo.",
+            "required": false,
+            "default": "config.rework.yaml"
+          },
+          {
+            "id": "llm_context_runtime_name",
+            "label": "Runtime Name",
+            "secret": false,
+            "type": "string",
+            "env_var": "LLM_CONTEXT_RUNTIME_NAME",
+            "description": "Nome runtime esposto da /health e context_info.",
+            "required": false,
+            "default": "llm-context"
+          },
+          {
+            "id": "llm_context_store_target",
+            "label": "Store Target Name",
+            "secret": false,
+            "type": "string",
+            "env_var": "LLM_CONTEXT_STORE_TARGET",
+            "description": "Nome descrittivo del target storage mostrato nella diagnostica operativa.",
+            "required": false,
+            "default": "llm-context-postgres"
+          },
+          {
+            "id": "llm_context_embedder",
+            "label": "Embedder",
+            "secret": false,
+            "type": "string",
+            "env_var": "LLM_CONTEXT_EMBEDDER",
+            "description": "Embedder di default di llm-context. Valori comuni: local-st, local-hash.",
+            "required": false,
+            "default": "local-st"
+          },
+          {
+            "id": "llm_context_port",
+            "label": "MCP Port",
+            "secret": false,
+            "type": "string",
+            "env_var": "MCP_PORT",
+            "description": "Porta HTTP di llm-context. Deve restare coerente con la porta dichiarata nel service control.",
+            "required": false,
+            "default": "8765"
+          },
           {
             "id": "llm_context_write_enabled",
             "label": "Enable Context Write / Ingest",
@@ -77,125 +137,6 @@
         },
         {
           "path": "../../../tools/_dev_runtime_logs/llm-context.out.log",
-          "channel": "stdout",
-          "tags": [
-            "dev",
-            "yetzirah"
-          ]
-        }
-      ]
-    },
-    {
-      "id": "llm-context-rework",
-      "name": "LLM Context Rework",
-      "kind": "rag",
-      "group": "knowledge",
-      "capabilities": [
-        "logs",
-        "activity",
-        "alerts",
-        "runtime_options",
-        "health_details"
-      ],
-      "parser_chain": [
-        "json",
-        "python",
-        "uvicorn_access",
-        "node_deprecation",
-        "db_mcp_event",
-        "mcp_activity"
-      ],
-      "rule_sets": [
-        "llm-context"
-      ],
-      "control": {
-        "workdir": "../../../llm_context_rework",
-        "start_command": [
-          "python",
-          "-u",
-          "mcp_server_http.py"
-        ],
-        "host": "127.0.0.1",
-        "port": 8766,
-        "health_url": "http://127.0.0.1:8766/health",
-        "startup_timeout_sec": 120,
-        "pid_file": "../../runtime/pids/llm-context-rework.pid",
-        "stdout_log": "../../../tools/_dev_runtime_logs/llm-context-rework.out.log",
-        "stderr_log": "../../../tools/_dev_runtime_logs/llm-context-rework.err.log",
-        "options": [
-          {
-            "id": "llm_context_rework_dsn",
-            "label": "LLM Context Rework PostgreSQL DSN",
-            "secret": true,
-            "type": "string",
-            "env_var": "LLM_CONTEXT_DSN",
-            "description": "DSN PostgreSQL del rework. Supporta DB locale, cloud/remoto o Docker; il servizio usa solo il DSN runtime.",
-            "required": true,
-            "default": ""
-          },
-          {
-            "id": "llm_context_rework_config_path",
-            "label": "Rework Config Path",
-            "secret": false,
-            "type": "string",
-            "env_var": "LLM_CONTEXT_CONFIG_PATH",
-            "description": "Profilo runtime del rework. Default: config.rework.yaml nella root del repo.",
-            "required": false,
-            "default": "config.rework.yaml"
-          },
-          {
-            "id": "llm_context_rework_runtime_name",
-            "label": "Runtime Name",
-            "secret": false,
-            "type": "string",
-            "env_var": "LLM_CONTEXT_RUNTIME_NAME",
-            "description": "Nome runtime esposto da /health e context_info.",
-            "required": false,
-            "default": "rework"
-          },
-          {
-            "id": "llm_context_rework_store_target",
-            "label": "Store Target Name",
-            "secret": false,
-            "type": "string",
-            "env_var": "LLM_CONTEXT_STORE_TARGET",
-            "description": "Nome descrittivo del target storage mostrato nella diagnostica operativa.",
-            "required": false,
-            "default": "rework-postgres"
-          },
-          {
-            "id": "llm_context_rework_embedder",
-            "label": "Embedder",
-            "secret": false,
-            "type": "string",
-            "env_var": "LLM_CONTEXT_EMBEDDER",
-            "description": "Embedder di default del rework. Valori comuni: local-st, local-hash.",
-            "required": false,
-            "default": "local-st"
-          },
-          {
-            "id": "llm_context_rework_port",
-            "label": "MCP Port",
-            "secret": false,
-            "type": "string",
-            "env_var": "MCP_PORT",
-            "description": "Porta HTTP del rework. Deve restare coerente con la porta dichiarata nel service control.",
-            "required": false,
-            "default": "8766"
-          }
-        ]
-      },
-      "log_sources": [
-        {
-          "path": "../../../tools/_dev_runtime_logs/llm-context-rework.err.log",
-          "channel": "stderr",
-          "tags": [
-            "dev",
-            "yetzirah"
-          ]
-        },
-        {
-          "path": "../../../tools/_dev_runtime_logs/llm-context-rework.out.log",
           "channel": "stdout",
           "tags": [
             "dev",
