@@ -213,8 +213,7 @@ class DbTargetRegistry:
     def _load(self) -> None:
         with self._lock:
             self._targets = [self._normalize_target(target) for target in self._load_source_targets()]
-            self._save()
-            self._export_runtime()
+            self._publish_runtime()
 
     def _save(self) -> None:
         _write_json(
@@ -227,6 +226,25 @@ class DbTargetRegistry:
 
     def _export_runtime(self) -> None:
         _write_json(self.runtime_path, self.runtime_snapshot())
+
+    def _publish_runtime(self) -> dict[str, Any]:
+        published_at = datetime.now().astimezone().isoformat()
+
+        for target in self._targets:
+            state = target.setdefault("state", {})
+            if target.get("status") != "active":
+                state["runtime_status"] = "disabled"
+                state["last_error"] = None
+            else:
+                connection_status = self._connection_status(target)
+                state["runtime_status"] = "ready" if connection_status.get("is_ready") else connection_status.get("status")
+                state["last_error"] = None if connection_status.get("is_ready") else connection_status.get("status_message")
+            state["last_synced_at"] = published_at
+
+        self._save()
+        snapshot = self.runtime_snapshot(generated_at=published_at)
+        _write_json(self.runtime_path, snapshot)
+        return self.runtime_export_info(snapshot=snapshot)
 
     def _merge_section(
         self,
@@ -539,8 +557,7 @@ class DbTargetRegistry:
 
             target = self._normalize_target(payload)
             self._targets.append(target)
-            self._save()
-            self._export_runtime()
+            self._publish_runtime()
             return copy.deepcopy(self._public_target(target))
 
     def update_target(self, target_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -554,8 +571,7 @@ class DbTargetRegistry:
             merged["target_id"] = target_id
             target = self._normalize_target(merged, existing=current)
             self._targets[idx] = target
-            self._save()
-            self._export_runtime()
+            self._publish_runtime()
             return copy.deepcopy(self._public_target(target))
 
     def delete_target(self, target_id: str) -> dict[str, Any]:
@@ -564,14 +580,16 @@ class DbTargetRegistry:
             if idx < 0:
                 raise ValueError(f"Unknown target_id: {target_id}")
             target = self._targets.pop(idx)
-            self._save()
-            self._export_runtime()
+            self._publish_runtime()
             return copy.deepcopy(self._public_target(target))
 
-    def runtime_snapshot(self) -> dict[str, Any]:
+    def runtime_snapshot(self, *, generated_at: str | None = None) -> dict[str, Any]:
         with self._lock:
             targets: list[dict[str, Any]] = []
+            active_target_count = 0
             for target in self._targets:
+                if target.get("status") == "active":
+                    active_target_count += 1
                 policy = target.get("policy", {})
                 runtime_allowed_tools = [
                     tool
@@ -594,6 +612,8 @@ class DbTargetRegistry:
                         "write_policy": policy.get("write_policy", "deny"),
                         "anonymization_enabled": bool(target.get("anonymization", {}).get("enabled", False)),
                         "anonymization_mode": target.get("anonymization", {}).get("mode", "off"),
+                        "llm_provider": target.get("anonymization", {}).get("provider", "none"),
+                        "llm_model": target.get("anonymization", {}).get("model", ""),
                         "anonymization_provider": target.get("anonymization", {}).get("provider", "none"),
                         "anonymization_model": target.get("anonymization", {}).get("model", ""),
                         "max_rows": target.get("limits", {}).get("max_rows", 100),
@@ -605,11 +625,32 @@ class DbTargetRegistry:
 
             payload = {
                 "version": 1,
-                "generated_at": datetime.now().astimezone().isoformat(),
+                "publisher": "mcp-dashboard",
+                "service_id": "llm-sql-db-mcp",
+                "apply_strategy": "restart_or_start",
+                "generated_at": generated_at or datetime.now().astimezone().isoformat(),
                 "target_count": len(targets),
+                "active_target_count": active_target_count,
                 "targets": targets,
             }
             return payload
+
+    def runtime_export_info(self, *, snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+        current_snapshot = snapshot or self.runtime_snapshot()
+        return {
+            "runtime_export_path": str(self.runtime_path),
+            "publisher": current_snapshot.get("publisher", "mcp-dashboard"),
+            "service_id": current_snapshot.get("service_id", "llm-sql-db-mcp"),
+            "apply_strategy": current_snapshot.get("apply_strategy", "restart_or_start"),
+            "generated_at": current_snapshot.get("generated_at"),
+            "target_count": current_snapshot.get("target_count", 0),
+            "active_target_count": current_snapshot.get("active_target_count", 0),
+            "snapshot": copy.deepcopy(current_snapshot),
+        }
+
+    def sync_runtime(self) -> dict[str, Any]:
+        with self._lock:
+            return self._publish_runtime()
 
     def runtime_env(self) -> dict[str, str]:
         with self._lock:
