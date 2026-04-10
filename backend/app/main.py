@@ -123,6 +123,18 @@ def _runtime_env_overrides(service) -> dict[str, str]:
     return overrides
 
 
+def _db_runtime_contract_payload() -> dict[str, Any]:
+    runtime = db_target_registry.runtime_export_info()
+    service = registry.get("llm-sql-db-mcp")
+    service_status = process_manager.status(service) if service is not None else None
+    is_running = bool((service_status or {}).get("running"))
+    return {
+        **runtime,
+        "apply_status": "restart_required" if is_running else "applied_on_next_start",
+        "service_status": service_status,
+    }
+
+
 def _memory_admin_service_or_400(service_id: str):
     service = _service_or_404(service_id)
     if "memory_admin" not in service.capabilities:
@@ -627,6 +639,21 @@ def list_db_targets() -> dict[str, Any]:
         "count": len(targets),
         "targets": targets,
         "runtime_export_path": str(DB_TARGETS_RUNTIME_EXPORT),
+        "runtime": _db_runtime_contract_payload(),
+    }
+
+
+@app.get("/api/db-targets/runtime")
+def db_targets_runtime() -> dict[str, Any]:
+    return _db_runtime_contract_payload()
+
+
+@app.post("/api/db-targets/runtime/sync")
+def db_targets_runtime_sync() -> dict[str, Any]:
+    db_target_registry.sync_runtime()
+    return {
+        "ok": True,
+        **_db_runtime_contract_payload(),
     }
 
 
