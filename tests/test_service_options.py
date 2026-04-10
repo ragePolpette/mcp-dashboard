@@ -50,29 +50,8 @@ def _context_service() -> ServiceDefinition:
             start_command=["python", "-u", "mcp_server_http.py"],
             options=[
                 ServiceOptionDefinition(
-                    option_id="llm_context_write_enabled",
-                    label="Enable Context Write / Ingest",
-                    kind="boolean",
-                    env_var="LLM_CONTEXT_WRITE_ENABLED",
-                    default=False,
-                )
-            ],
-        ),
-    )
-
-
-def _context_rework_service() -> ServiceDefinition:
-    return ServiceDefinition(
-        service_id="llm-context-rework",
-        name="LLM Context Rework",
-        log_sources=[ServiceLogSource(path=Path("dummy.log"), channel="stderr")],
-        control=ServiceControlDefinition(
-            workdir=Path("."),
-            start_command=["python", "-u", "mcp_server_http.py"],
-            options=[
-                ServiceOptionDefinition(
-                    option_id="llm_context_rework_dsn",
-                    label="LLM Context Rework PostgreSQL DSN",
+                    option_id="llm_context_dsn",
+                    label="LLM Context PostgreSQL DSN",
                     kind="string",
                     env_var="LLM_CONTEXT_DSN",
                     default="",
@@ -80,26 +59,47 @@ def _context_rework_service() -> ServiceDefinition:
                     secret=True,
                 ),
                 ServiceOptionDefinition(
-                    option_id="llm_context_rework_config_path",
-                    label="Rework Config Path",
+                    option_id="llm_context_config_path",
+                    label="Config Path",
                     kind="string",
                     env_var="LLM_CONTEXT_CONFIG_PATH",
                     default="config.rework.yaml",
                 ),
                 ServiceOptionDefinition(
-                    option_id="llm_context_rework_runtime_name",
+                    option_id="llm_context_runtime_name",
                     label="Runtime Name",
                     kind="string",
                     env_var="LLM_CONTEXT_RUNTIME_NAME",
-                    default="rework",
+                    default="llm-context",
                 ),
                 ServiceOptionDefinition(
-                    option_id="llm_context_rework_port",
+                    option_id="llm_context_store_target",
+                    label="Store Target Name",
+                    kind="string",
+                    env_var="LLM_CONTEXT_STORE_TARGET",
+                    default="llm-context-postgres",
+                ),
+                ServiceOptionDefinition(
+                    option_id="llm_context_embedder",
+                    label="Embedder",
+                    kind="string",
+                    env_var="LLM_CONTEXT_EMBEDDER",
+                    default="local-st",
+                ),
+                ServiceOptionDefinition(
+                    option_id="llm_context_port",
                     label="MCP Port",
                     kind="string",
                     env_var="MCP_PORT",
-                    default="8766",
+                    default="8765",
                 ),
+                ServiceOptionDefinition(
+                    option_id="llm_context_write_enabled",
+                    label="Enable Context Write / Ingest",
+                    kind="boolean",
+                    env_var="LLM_CONTEXT_WRITE_ENABLED",
+                    default=False,
+                )
             ],
         ),
     )
@@ -159,24 +159,31 @@ def test_context_write_toggle_maps_to_env():
         manager = ServiceOptionsManager(state)
         service = _context_service()
 
-        manager.update_options(service, {"llm_context_write_enabled": True})
+        manager.update_options(
+            service,
+            {
+                "llm_context_dsn": "postgresql://ctx:ctx@db.internal:5432/ctx_rework",
+                "llm_context_write_enabled": True,
+            },
+        )
 
         env = manager.options_env(service)
+        assert env["LLM_CONTEXT_DSN"] == "postgresql://ctx:ctx@db.internal:5432/ctx_rework"
         assert env["LLM_CONTEXT_WRITE_ENABLED"] == "true"
 
 
-def test_context_rework_runtime_options_require_secret_dsn_and_apply_defaults():
+def test_context_runtime_options_require_secret_dsn_and_apply_defaults():
     with tempfile.TemporaryDirectory() as tmp:
         state = Path(tmp) / "runtime" / "service_options.json"
         manager = ServiceOptionsManager(state)
-        service = _context_rework_service()
+        service = _context_service()
 
         missing_before = manager.missing_required_options(service)
-        assert missing_before == ["LLM Context Rework PostgreSQL DSN"]
+        assert missing_before == ["LLM Context PostgreSQL DSN"]
 
         manager.update_options(
             service,
-            {"llm_context_rework_dsn": "postgresql://ctx:ctx@db.internal:5432/ctx_rework"},
+            {"llm_context_dsn": "postgresql://ctx:ctx@db.internal:5432/ctx_rework"},
         )
 
         missing_after = manager.missing_required_options(service)
@@ -190,8 +197,10 @@ def test_context_rework_runtime_options_require_secret_dsn_and_apply_defaults():
         env = manager.options_env(service)
         assert env["LLM_CONTEXT_DSN"] == "postgresql://ctx:ctx@db.internal:5432/ctx_rework"
         assert env["LLM_CONTEXT_CONFIG_PATH"] == "config.rework.yaml"
-        assert env["LLM_CONTEXT_RUNTIME_NAME"] == "rework"
-        assert env["MCP_PORT"] == "8766"
+        assert env["LLM_CONTEXT_RUNTIME_NAME"] == "llm-context"
+        assert env["LLM_CONTEXT_STORE_TARGET"] == "llm-context-postgres"
+        assert env["LLM_CONTEXT_EMBEDDER"] == "local-st"
+        assert env["MCP_PORT"] == "8765"
 
 
 def test_options_invalid_boolean_rejected():
