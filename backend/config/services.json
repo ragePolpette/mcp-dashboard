@@ -24,7 +24,7 @@
         "llm-context"
       ],
       "control": {
-        "workdir": "../../../llm_context_rework",
+        "workdir": "../../../llm_context",
         "start_command": [
           "python",
           "-u",
