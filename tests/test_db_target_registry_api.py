@@ -112,6 +112,42 @@ def test_sql_service_start_uses_runtime_registry_env_and_vault_ref(monkeypatch):
         assert captured["ANON_FAIL_OPEN"] == "false"
 
 
+def test_db_target_runtime_contract_is_compatible_with_sql_mcp(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        registry, vault = _make_registry(tmp, with_vault=True)
+        assert vault is not None
+        vault.upsert_secret("db.prod.main", "Server=.;Database=Prod;")
+        registry.update_target("prod-main", {"connection": {"vault_ref": "db.prod.main"}})
+
+        monkeypatch.setattr("app.main.db_target_registry", registry)
+        monkeypatch.setattr("app.main.process_manager.status", lambda _service: {"running": True, "pid": 4242})
+
+        client = TestClient(app)
+
+        runtime_response = client.get("/api/db-targets/runtime")
+        assert runtime_response.status_code == 200
+        runtime_payload = runtime_response.json()
+        assert runtime_payload["service_id"] == "llm-sql-db-mcp"
+        assert runtime_payload["apply_status"] == "restart_required"
+        assert runtime_payload["snapshot"]["publisher"] == "mcp-dashboard"
+        assert runtime_payload["snapshot"]["apply_strategy"] == "restart_or_start"
+
+        prod_target = next(
+            target for target in runtime_payload["snapshot"]["targets"] if target["target_id"] == "prod-main"
+        )
+        assert prod_target["llm_provider"] == "lmstudio"
+        assert prod_target["llm_model"] == "google/gemma-3-4b"
+        assert prod_target["connection_vault_ref"] == "vault://db.prod.main"
+        assert prod_target["state"]["last_synced_at"]
+        assert prod_target["state"]["runtime_status"] == "ready"
+
+        sync_response = client.post("/api/db-targets/runtime/sync")
+        assert sync_response.status_code == 200
+        sync_payload = sync_response.json()
+        assert sync_payload["ok"] is True
+        assert sync_payload["apply_status"] == "restart_required"
+
+
 def test_vault_status_includes_db_target_registry_ref_usage(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         registry, vault = _make_registry(tmp, with_vault=True)
