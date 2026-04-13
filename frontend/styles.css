@@ -1312,12 +1312,44 @@ tbody td {
   font-size: 0.84rem;
 }
 
+.memory-admin-stack {
+  display: grid;
+  gap: 4px;
+}
+
+.memory-admin-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.memory-admin-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #26425f;
+  background: rgba(13, 26, 41, 0.55);
+  color: #d3dfea;
+  font-size: 0.74rem;
+}
+
 #memoryAuditBody td:nth-child(1),
-#memoryProjectsBody td:nth-child(6) {
+#memoryProjectsBody td:nth-child(6),
+#memoryCandidatesBody td:nth-child(1) {
   white-space: nowrap;
 }
 
 #memoryAuditBody td:nth-child(6) pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: 0.8rem;
+  color: #d3dfea;
+}
+
+#memoryCandidatesBody td:nth-child(6) pre {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
