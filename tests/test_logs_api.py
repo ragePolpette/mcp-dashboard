@@ -238,6 +238,80 @@ def test_memory_admin_candidates_proxy_maps_proxy_errors(monkeypatch):
     assert response.json()["detail"] == "Candidate queue unavailable"
 
 
+def test_memory_admin_distillation_runs_proxy_forwards_filters(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_runs(_service, **filters):
+        captured.update(filters)
+        return {
+            "status": "ok",
+            "runs": {
+                "count": 1,
+                "items": [{"id": "run-1", "status": "prepared"}],
+            },
+        }
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr("app.main.memory_admin_client.get_distillation_runs", fake_get_runs)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/services/llm-memory/memory-admin/distillation/runs"
+        "?limit=25&workspace_id=ws-a&project_id=prj-a&agent_id=agent-a&status=reviewed"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runs"]["count"] == 1
+    assert captured == {
+        "limit": 25,
+        "workspace_id": "ws-a",
+        "project_id": "prj-a",
+        "agent_id": "agent-a",
+        "status": "reviewed",
+    }
+
+
+def test_memory_admin_distillation_run_proxy_returns_detail(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr(
+        "app.main.memory_admin_client.get_distillation_run",
+        lambda _service, run_id: {"status": "ok", "run": {"id": run_id, "status": "applied"}},
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-memory/memory-admin/distillation/runs/run-42")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["run"]["id"] == "run-42"
+    assert payload["run"]["status"] == "applied"
+
+
+
 def test_memory_admin_prepare_distillation_proxy_forwards_payload(monkeypatch):
     service = ServiceDefinition(
         service_id="llm-memory",

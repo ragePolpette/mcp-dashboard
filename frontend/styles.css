@@ -1363,6 +1363,10 @@ tbody td {
   font-size: 0.8rem;
 }
 
+.memory-admin-row-selected {
+  background: rgba(182, 235, 122, 0.12);
+}
+
 #memoryAuditBody td:nth-child(1),
 #memoryProjectsBody td:nth-child(6),
 #memoryCandidatesBody td:nth-child(1) {
