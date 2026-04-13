@@ -75,6 +75,18 @@ const memoryCandidatesIncludeResolvedInput = document.getElementById("memoryCand
 const applyMemoryCandidatesBtn = document.getElementById("applyMemoryCandidatesBtn");
 const resetMemoryCandidatesBtn = document.getElementById("resetMemoryCandidatesBtn");
 const memoryCandidatesBody = document.getElementById("memoryCandidatesBody");
+const memoryDistillationSummary = document.getElementById("memoryDistillationSummary");
+const memoryDistillationAgentInput = document.getElementById("memoryDistillationAgentInput");
+const memoryDistillationUserInput = document.getElementById("memoryDistillationUserInput");
+const memoryDistillationWorkspaceInput = document.getElementById("memoryDistillationWorkspaceInput");
+const memoryDistillationProjectInput = document.getElementById("memoryDistillationProjectInput");
+const memoryDistillationReasonInput = document.getElementById("memoryDistillationReasonInput");
+const memoryDistillationPreparedPre = document.getElementById("memoryDistillationPreparedPre");
+const memoryDistillationOutputInput = document.getElementById("memoryDistillationOutputInput");
+const memoryDistillationDryRunInput = document.getElementById("memoryDistillationDryRunInput");
+const previewMemoryDistillationApplyBtn = document.getElementById("previewMemoryDistillationApplyBtn");
+const applyMemoryDistillationBtn = document.getElementById("applyMemoryDistillationBtn");
+const resetMemoryDistillationBtn = document.getElementById("resetMemoryDistillationBtn");
 const memoryAuditSummary = document.getElementById("memoryAuditSummary");
 const memoryAuditLimitInput = document.getElementById("memoryAuditLimitInput");
 const memoryAuditActionInput = document.getElementById("memoryAuditActionInput");
@@ -357,6 +369,22 @@ function defaultMemoryAdminState() {
       items: []
     },
     candidatesError: "",
+    distillation: {
+      operator: {
+        agent_id: "dashboard-operator",
+        user_id: "",
+        workspace_id: "",
+        project_id: "",
+        reason: ""
+      },
+      prepared: null,
+      preparedClusterId: "",
+      preparedError: "",
+      applyDraft: "",
+      applyResult: null,
+      applyError: "",
+      dryRun: true
+    },
     audit: {
       count: 0,
       limit: 50,
@@ -1073,7 +1101,7 @@ function renderMemoryCandidatesTable(serviceId) {
 
   if (state.candidatesError) {
     memoryCandidatesSummary.textContent = `Errore candidates: ${state.candidatesError}`;
-    appendEmptyTableRow(memoryCandidatesBody, 6, "Impossibile caricare la candidate queue.");
+    appendEmptyTableRow(memoryCandidatesBody, 7, "Impossibile caricare la candidate queue.");
     return;
   }
 
@@ -1094,7 +1122,7 @@ function renderMemoryCandidatesTable(serviceId) {
     `${filters.distillation_status ? ` | Status ${filters.distillation_status}` : ""}`;
 
   if (!Array.isArray(candidates.items) || candidates.items.length === 0) {
-    appendEmptyTableRow(memoryCandidatesBody, 6, "Nessun candidato disponibile per i filtri correnti.");
+    appendEmptyTableRow(memoryCandidatesBody, 7, "Nessun candidato disponibile per i filtri correnti.");
     return;
   }
 
@@ -1169,11 +1197,59 @@ function renderMemoryCandidatesTable(serviceId) {
     previewPre.textContent = item.content_preview || "";
     previewTd.appendChild(previewPre);
 
-    tr.append(scoreTd, clusterTd, scopeTd, signalsTd, entriesTd, previewTd);
+    const actionTd = document.createElement("td");
+    const prepareBtn = document.createElement("button");
+    prepareBtn.type = "button";
+    prepareBtn.textContent = "Prepare";
+    prepareBtn.addEventListener("click", () => prepareDistillationForCluster(serviceId, item.cluster_id));
+    actionTd.appendChild(prepareBtn);
+
+    tr.append(scoreTd, clusterTd, scopeTd, signalsTd, entriesTd, previewTd, actionTd);
     frag.appendChild(tr);
   }
 
   memoryCandidatesBody.appendChild(frag);
+}
+
+function renderMemoryDistillationPanel(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  const distillation = state.distillation || {};
+  const prepared = distillation.prepared;
+  const applyResult = distillation.applyResult;
+
+  let statusText = "Nessun pack preparato.";
+  if (distillation.preparedError) {
+    statusText = `Errore prepare: ${distillation.preparedError}`;
+  } else if (distillation.applyError) {
+    statusText = `Errore apply: ${distillation.applyError}`;
+  } else if (applyResult && applyResult.success) {
+    statusText = applyResult.dry_run
+      ? `Preview apply completata su ${applyResult.count || 0} decisioni.`
+      : `Apply completato su ${applyResult.count || 0} decisioni.`;
+  } else if (prepared) {
+    statusText = `Prepared ${prepared.prepared_count || 0} candidati` +
+      `${distillation.preparedClusterId ? ` | cluster ${distillation.preparedClusterId}` : ""}`;
+  }
+
+  memoryDistillationSummary.textContent = statusText;
+  memoryDistillationPreparedPre.textContent = prepared
+    ? JSON.stringify(
+        {
+          prepared_count: prepared.prepared_count,
+          reason: prepared.reason,
+          protection: prepared.protection,
+          candidates: prepared.candidates,
+          contract: prepared.contract,
+          prompt: prepared.prompt
+        },
+        null,
+        2
+      )
+    : "";
+  if (document.activeElement !== memoryDistillationOutputInput) {
+    memoryDistillationOutputInput.value = distillation.applyDraft || "";
+  }
+  memoryDistillationDryRunInput.checked = distillation.dryRun !== false;
 }
 
 function renderMemoryAuditTable(serviceId) {
@@ -1290,6 +1366,7 @@ function renderMemoryAdminForAdvanced(serviceId) {
 
   renderMemoryAdminSummaryCards(serviceId);
   renderMemoryCandidatesTable(serviceId);
+  renderMemoryDistillationPanel(serviceId);
   renderMemoryAuditTable(serviceId);
   renderMemoryProjectsTable(serviceId);
 }
@@ -1997,6 +2074,163 @@ async function loadMemoryAdminAll(serviceId) {
     loadMemoryAdminAudit(serviceId),
     loadMemoryAdminProjects(serviceId)
   ]);
+}
+
+function syncMemoryDistillationStateFromInputs(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  state.distillation = {
+    ...(state.distillation || {}),
+    operator: {
+      agent_id: String(memoryDistillationAgentInput.value || "").trim(),
+      user_id: String(memoryDistillationUserInput.value || "").trim(),
+      workspace_id: String(memoryDistillationWorkspaceInput.value || "").trim(),
+      project_id: String(memoryDistillationProjectInput.value || "").trim(),
+      reason: String(memoryDistillationReasonInput.value || "").trim()
+    },
+    applyDraft: String(memoryDistillationOutputInput.value || ""),
+    dryRun: Boolean(memoryDistillationDryRunInput.checked)
+  };
+}
+
+function syncMemoryDistillationInputsFromState(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  const operator = state.distillation?.operator || {};
+  memoryDistillationAgentInput.value = operator.agent_id || "dashboard-operator";
+  memoryDistillationUserInput.value = operator.user_id || "";
+  memoryDistillationWorkspaceInput.value = operator.workspace_id || "";
+  memoryDistillationProjectInput.value = operator.project_id || "";
+  memoryDistillationReasonInput.value = operator.reason || "";
+  memoryDistillationDryRunInput.checked = state.distillation?.dryRun !== false;
+  if (document.activeElement !== memoryDistillationOutputInput) {
+    memoryDistillationOutputInput.value = state.distillation?.applyDraft || "";
+  }
+}
+
+async function prepareDistillationForCluster(serviceId, clusterId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  syncMemoryDistillationStateFromInputs(serviceId);
+  const operator = state.distillation?.operator || {};
+  const candidateFilters = state.candidates?.filters || {};
+  const payload = {
+    agent_id: operator.agent_id || "dashboard-operator",
+    user_id: operator.user_id || null,
+    workspace_id: operator.workspace_id || candidateFilters.workspace_id || null,
+    project_id: operator.project_id || candidateFilters.project_id || null,
+    reason: operator.reason || `prepare cluster ${clusterId} from dashboard`,
+    cluster_id: clusterId,
+    top_k: 1,
+    include_resolved: Boolean(candidateFilters.include_resolved),
+    distillation_status: candidateFilters.distillation_status || "pending"
+  };
+
+  try {
+    const response = await apiJson(`/api/services/${serviceId}/memory-admin/distillation/prepare`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    state.distillation = {
+      ...(state.distillation || {}),
+      operator: {
+        ...operator,
+        agent_id: payload.agent_id,
+        user_id: payload.user_id || "",
+        workspace_id: payload.workspace_id || "",
+        project_id: payload.project_id || "",
+        reason: payload.reason
+      },
+      prepared: response.distillation_prepare || null,
+      preparedClusterId: clusterId,
+      preparedError: "",
+      applyError: "",
+      applyResult: null
+    };
+  } catch (error) {
+    state.distillation = {
+      ...(state.distillation || {}),
+      prepared: null,
+      preparedClusterId: clusterId,
+      preparedError: error.message
+    };
+  }
+
+  syncMemoryDistillationInputsFromState(serviceId);
+  renderMemoryAdminForAdvanced(serviceId);
+}
+
+async function applyMemoryDistillation(serviceId, dryRun) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  syncMemoryDistillationStateFromInputs(serviceId);
+  const operator = state.distillation?.operator || {};
+  let parsed;
+  try {
+    parsed = JSON.parse(state.distillation?.applyDraft || "{}");
+  } catch (error) {
+    state.distillation = {
+      ...(state.distillation || {}),
+      applyError: `JSON non valido: ${error.message}`,
+      applyResult: null,
+      dryRun
+    };
+    renderMemoryAdminForAdvanced(serviceId);
+    return;
+  }
+
+  const payload = {
+    agent_id: operator.agent_id || "dashboard-operator",
+    user_id: operator.user_id || null,
+    workspace_id: operator.workspace_id || null,
+    project_id: operator.project_id || null,
+    reason: operator.reason || "apply distillation from dashboard",
+    dry_run: Boolean(dryRun),
+    payload: parsed
+  };
+
+  try {
+    const response = await apiJson(`/api/services/${serviceId}/memory-admin/distillation/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    state.distillation = {
+      ...(state.distillation || {}),
+      operator: {
+        ...operator,
+        agent_id: payload.agent_id,
+        user_id: payload.user_id || "",
+        workspace_id: payload.workspace_id || "",
+        project_id: payload.project_id || "",
+        reason: payload.reason
+      },
+      dryRun,
+      applyError: "",
+      applyResult: response.distillation_apply || null
+    };
+    if (!dryRun) {
+      await Promise.all([
+        loadMemoryAdminCandidates(serviceId),
+        loadMemoryAdminAudit(serviceId),
+        loadMemoryAdminProjects(serviceId),
+        loadMemoryAdminSummary(serviceId)
+      ]);
+    }
+  } catch (error) {
+    state.distillation = {
+      ...(state.distillation || {}),
+      dryRun,
+      applyError: error.message,
+      applyResult: null
+    };
+  }
+
+  syncMemoryDistillationInputsFromState(serviceId);
+  renderMemoryAdminForAdvanced(serviceId);
 }
 
 async function loadDashboardStatus() {
@@ -3666,6 +3900,7 @@ function syncMemoryAdminInputsFromState(serviceId) {
   memoryAuditSinceInput.value = auditFilters.since || "";
   memoryProjectsLimitInput.value = String(clampLimitValue(state.projects?.limit, 50));
   memoryProjectsWorkspaceInput.value = state.projects?.workspace_id || "";
+  syncMemoryDistillationInputsFromState(serviceId);
 }
 
 function syncMemoryCandidatesStateFromInputs(serviceId) {
@@ -4046,6 +4281,7 @@ reloadMemoryAdminBtn?.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
     return;
   }
+  syncMemoryDistillationStateFromInputs(advancedServiceId);
   syncMemoryCandidatesStateFromInputs(advancedServiceId);
   syncMemoryAuditStateFromInputs(advancedServiceId);
   syncMemoryProjectsStateFromInputs(advancedServiceId);
@@ -4054,6 +4290,42 @@ reloadMemoryAdminBtn?.addEventListener("click", async () => {
 });
 applyMemoryCandidatesBtn?.addEventListener("click", applyMemoryCandidatesFilters);
 resetMemoryCandidatesBtn?.addEventListener("click", resetMemoryCandidatesFilters);
+previewMemoryDistillationApplyBtn?.addEventListener("click", async () => {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  await applyMemoryDistillation(advancedServiceId, true);
+});
+applyMemoryDistillationBtn?.addEventListener("click", async () => {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  await applyMemoryDistillation(advancedServiceId, false);
+});
+resetMemoryDistillationBtn?.addEventListener("click", () => {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(advancedServiceId);
+  state.distillation = {
+    operator: {
+      agent_id: "dashboard-operator",
+      user_id: "",
+      workspace_id: "",
+      project_id: "",
+      reason: ""
+    },
+    prepared: null,
+    preparedClusterId: "",
+    preparedError: "",
+    applyDraft: "",
+    applyResult: null,
+    applyError: "",
+    dryRun: true
+  };
+  syncMemoryDistillationInputsFromState(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+});
 applyMemoryAuditBtn?.addEventListener("click", applyMemoryAuditFilters);
 resetMemoryAuditBtn?.addEventListener("click", resetMemoryAuditFilters);
 reloadMemoryProjectsBtn?.addEventListener("click", reloadMemoryProjects);

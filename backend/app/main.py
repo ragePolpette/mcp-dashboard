@@ -93,6 +93,29 @@ class DbTargetPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
 
+class MemoryDistillationPreparePayload(BaseModel):
+    agent_id: str = ""
+    user_id: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    reason: str = ""
+    cluster_id: str | None = None
+    entry_id: str | None = None
+    top_k: int = 1
+    include_resolved: bool = False
+    distillation_status: str | None = None
+
+
+class MemoryDistillationApplyPayload(BaseModel):
+    agent_id: str = ""
+    user_id: str | None = None
+    workspace_id: str | None = None
+    project_id: str | None = None
+    reason: str = ""
+    dry_run: bool = True
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 def _service_or_404(service_id: str):
     service = registry.get(service_id)
     if service is None:
@@ -821,6 +844,30 @@ def service_memory_admin_candidates(
             include_resolved=include_resolved,
             distillation_status=distillation_status,
         )
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.post("/api/services/{service_id}/memory-admin/distillation/prepare")
+def service_memory_admin_prepare_distillation(
+    service_id: str,
+    payload: MemoryDistillationPreparePayload,
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.prepare_distillation(service, payload.model_dump())
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.post("/api/services/{service_id}/memory-admin/distillation/apply")
+def service_memory_admin_apply_distillation(
+    service_id: str,
+    payload: MemoryDistillationApplyPayload,
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.apply_distillation(service, payload.model_dump())
     except MemoryAdminProxyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
