@@ -802,6 +802,29 @@ def service_memory_admin_projects(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+@app.get("/api/services/{service_id}/memory-admin/candidates")
+def service_memory_admin_candidates(
+    service_id: str,
+    limit: int = Query(default=20, ge=1, le=200),
+    workspace_id: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
+    include_resolved: bool = Query(default=False),
+    distillation_status: str | None = Query(default=None),
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_candidates(
+            service,
+            limit=limit,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            include_resolved=include_resolved,
+            distillation_status=distillation_status,
+        )
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 def _schedule_dashboard_shutdown(delay_seconds: float = 0.35) -> None:
     def _shutdown() -> None:
         time.sleep(delay_seconds)

@@ -175,6 +175,48 @@
         <section class="memory-admin-panel">
           <div class="memory-admin-header">
             <div>
+              <h3>Candidate Queue</h3>
+              <p id="memoryCandidatesSummary" class="muted">Nessun candidato caricato.</p>
+            </div>
+          </div>
+          <div class="memory-admin-filters">
+            <label for="memoryCandidatesLimitInput">Limit</label>
+            <input id="memoryCandidatesLimitInput" type="number" value="20" min="1" max="200">
+            <label for="memoryCandidatesWorkspaceInput">Workspace</label>
+            <input id="memoryCandidatesWorkspaceInput" type="text" placeholder="workspace-id">
+            <label for="memoryCandidatesProjectInput">Project</label>
+            <input id="memoryCandidatesProjectInput" type="text" placeholder="project-id">
+            <label for="memoryCandidatesStatusInput">Status</label>
+            <select id="memoryCandidatesStatusInput">
+              <option value="pending" selected>pending</option>
+              <option value="summarized">summarized</option>
+              <option value="promoted">promoted</option>
+              <option value="discarded">discarded</option>
+            </select>
+            <label class="settings-toggle"><input id="memoryCandidatesIncludeResolvedInput" type="checkbox">Include resolved</label>
+            <button id="applyMemoryCandidatesBtn" type="button">Applica Candidates</button>
+            <button id="resetMemoryCandidatesBtn" type="button">Reset Candidates</button>
+          </div>
+          <div class="query-pane memory-admin-table-pane">
+            <table>
+              <thead>
+                <tr>
+                  <th>Score</th>
+                  <th>Cluster</th>
+                  <th>Scope</th>
+                  <th>Signals</th>
+                  <th>Entries</th>
+                  <th>Preview</th>
+                </tr>
+              </thead>
+              <tbody id="memoryCandidatesBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="memory-admin-panel">
+          <div class="memory-admin-header">
+            <div>
               <h3>Audit Trail</h3>
               <p id="memoryAuditSummary" class="muted">Nessun audit caricato.</p>
             </div>

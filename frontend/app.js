@@ -66,6 +66,15 @@ const reloadAlertsBtn = document.getElementById("reloadAlertsBtn");
 const memoryAdminStatus = document.getElementById("memoryAdminStatus");
 const memoryAdminSummaryGrid = document.getElementById("memoryAdminSummaryGrid");
 const reloadMemoryAdminBtn = document.getElementById("reloadMemoryAdminBtn");
+const memoryCandidatesSummary = document.getElementById("memoryCandidatesSummary");
+const memoryCandidatesLimitInput = document.getElementById("memoryCandidatesLimitInput");
+const memoryCandidatesWorkspaceInput = document.getElementById("memoryCandidatesWorkspaceInput");
+const memoryCandidatesProjectInput = document.getElementById("memoryCandidatesProjectInput");
+const memoryCandidatesStatusInput = document.getElementById("memoryCandidatesStatusInput");
+const memoryCandidatesIncludeResolvedInput = document.getElementById("memoryCandidatesIncludeResolvedInput");
+const applyMemoryCandidatesBtn = document.getElementById("applyMemoryCandidatesBtn");
+const resetMemoryCandidatesBtn = document.getElementById("resetMemoryCandidatesBtn");
+const memoryCandidatesBody = document.getElementById("memoryCandidatesBody");
 const memoryAuditSummary = document.getElementById("memoryAuditSummary");
 const memoryAuditLimitInput = document.getElementById("memoryAuditLimitInput");
 const memoryAuditActionInput = document.getElementById("memoryAuditActionInput");
@@ -334,6 +343,20 @@ function defaultMemoryAdminState() {
   return {
     summary: null,
     summaryError: "",
+    candidates: {
+      count: 0,
+      limit: 20,
+      source_count: 0,
+      cluster_count: 0,
+      filters: {
+        workspace_id: "",
+        project_id: "",
+        include_resolved: false,
+        distillation_status: "pending"
+      },
+      items: []
+    },
+    candidatesError: "",
     audit: {
       count: 0,
       limit: 50,
@@ -935,6 +958,12 @@ function clearMemoryAuditRows() {
   }
 }
 
+function clearMemoryCandidateRows() {
+  while (memoryCandidatesBody.firstChild) {
+    memoryCandidatesBody.removeChild(memoryCandidatesBody.firstChild);
+  }
+}
+
 function clearMemoryProjectRows() {
   while (memoryProjectsBody.firstChild) {
     memoryProjectsBody.removeChild(memoryProjectsBody.firstChild);
@@ -1036,6 +1065,115 @@ function renderMemoryAdminSummaryCards(serviceId) {
   for (const [label, value] of cards) {
     memoryAdminSummaryGrid.appendChild(createSummaryCard(label, value));
   }
+}
+
+function renderMemoryCandidatesTable(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  clearMemoryCandidateRows();
+
+  if (state.candidatesError) {
+    memoryCandidatesSummary.textContent = `Errore candidates: ${state.candidatesError}`;
+    appendEmptyTableRow(memoryCandidatesBody, 6, "Impossibile caricare la candidate queue.");
+    return;
+  }
+
+  const candidates = state.candidates || {
+    count: 0,
+    limit: 20,
+    source_count: 0,
+    cluster_count: 0,
+    filters: {},
+    items: []
+  };
+  const filters = candidates.filters || {};
+  memoryCandidatesSummary.textContent =
+    `Candidati: ${candidates.count || 0} | Pool ${candidates.source_count || 0} | Cluster ${candidates.cluster_count || 0}` +
+    `${filters.workspace_id ? ` | Workspace ${filters.workspace_id}` : ""}` +
+    `${filters.project_id ? ` | Project ${filters.project_id}` : ""}` +
+    `${filters.include_resolved ? " | Include resolved" : ""}` +
+    `${filters.distillation_status ? ` | Status ${filters.distillation_status}` : ""}`;
+
+  if (!Array.isArray(candidates.items) || candidates.items.length === 0) {
+    appendEmptyTableRow(memoryCandidatesBody, 6, "Nessun candidato disponibile per i filtri correnti.");
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  for (const item of candidates.items) {
+    const tr = document.createElement("tr");
+
+    const scoreTd = document.createElement("td");
+    scoreTd.textContent = typeof item.candidate_score === "number" ? item.candidate_score.toFixed(3) : "n/d";
+
+    const clusterTd = document.createElement("td");
+    const clusterWrap = document.createElement("div");
+    clusterWrap.className = "memory-admin-stack";
+    const clusterId = document.createElement("div");
+    clusterId.textContent = item.cluster_id || "n/d";
+    applyTooltip(clusterId, item.cluster_key || item.cluster_id || "Cluster non disponibile");
+    const clusterKind = document.createElement("div");
+    clusterKind.className = "muted";
+    clusterKind.textContent = item.representative_kind || item.representative_event_type || "n/d";
+    clusterWrap.append(clusterId, clusterKind);
+    clusterTd.appendChild(clusterWrap);
+
+    const scopeTd = document.createElement("td");
+    const scopeWrap = document.createElement("div");
+    scopeWrap.className = "memory-admin-stack";
+    for (const value of [item.product_area, item.component, item.feature].filter(Boolean)) {
+      const chip = document.createElement("span");
+      chip.className = "memory-admin-chip";
+      chip.textContent = value;
+      scopeWrap.appendChild(chip);
+    }
+    if (!scopeWrap.childNodes.length) {
+      scopeWrap.textContent = "n/d";
+    }
+    scopeTd.appendChild(scopeWrap);
+
+    const signalsTd = document.createElement("td");
+    const signalsWrap = document.createElement("div");
+    signalsWrap.className = "memory-admin-stack";
+    const signalMeta = document.createElement("div");
+    signalMeta.textContent =
+      `members ${item.member_count ?? "n/d"} | recurrence ${item.recurrence_total ?? "n/d"} | sessions ${item.distinct_session_count ?? "n/d"}`;
+    signalsWrap.appendChild(signalMeta);
+    const reasonsWrap = document.createElement("div");
+    reasonsWrap.className = "memory-admin-chip-list";
+    for (const reason of Array.isArray(item.reasons) ? item.reasons : []) {
+      const chip = document.createElement("span");
+      chip.className = "memory-admin-chip";
+      chip.textContent = reason;
+      reasonsWrap.appendChild(chip);
+    }
+    if (reasonsWrap.childNodes.length) {
+      signalsWrap.appendChild(reasonsWrap);
+    }
+    signalsTd.appendChild(signalsWrap);
+
+    const entriesTd = document.createElement("td");
+    const entriesWrap = document.createElement("div");
+    entriesWrap.className = "memory-admin-stack";
+    const entryMeta = document.createElement("div");
+    entryMeta.textContent = `anchor ${item.representative_entry_id || "n/d"} | unresolved ${item.unresolved_count ?? "n/d"}`;
+    entriesWrap.appendChild(entryMeta);
+    const entryIds = document.createElement("div");
+    entryIds.className = "muted";
+    entryIds.textContent = Array.isArray(item.member_entry_ids) ? item.member_entry_ids.join(", ") : "n/d";
+    entriesWrap.appendChild(entryIds);
+    entriesTd.appendChild(entriesWrap);
+
+    const previewTd = document.createElement("td");
+    const previewPre = document.createElement("pre");
+    previewPre.className = "message-preview";
+    previewPre.textContent = item.content_preview || "";
+    previewTd.appendChild(previewPre);
+
+    tr.append(scoreTd, clusterTd, scopeTd, signalsTd, entriesTd, previewTd);
+    frag.appendChild(tr);
+  }
+
+  memoryCandidatesBody.appendChild(frag);
 }
 
 function renderMemoryAuditTable(serviceId) {
@@ -1145,12 +1283,13 @@ function renderMemoryAdminForAdvanced(serviceId) {
   }
 
   const state = getMemoryAdminState(serviceId);
-  const errors = [state.summaryError, state.auditError, state.projectsError].filter(Boolean);
+  const errors = [state.summaryError, state.candidatesError, state.auditError, state.projectsError].filter(Boolean);
   memoryAdminStatus.textContent = errors.length
     ? `Surface admin locale con errori: ${errors.join(" | ")}`
     : "Surface admin locale raggiungibile.";
 
   renderMemoryAdminSummaryCards(serviceId);
+  renderMemoryCandidatesTable(serviceId);
   renderMemoryAuditTable(serviceId);
   renderMemoryProjectsTable(serviceId);
 }
@@ -1760,6 +1899,42 @@ async function loadMemoryAdminSummary(serviceId) {
   }
 }
 
+async function loadMemoryAdminCandidates(serviceId) {
+  if (!supportsMemoryAdmin(serviceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(serviceId);
+  const filters = state.candidates?.filters || {};
+  const params = new URLSearchParams();
+  params.set("limit", String(Math.max(1, Math.min(200, clampLimitValue(state.candidates?.limit, 20)))));
+  if (filters.workspace_id) params.set("workspace_id", filters.workspace_id);
+  if (filters.project_id) params.set("project_id", filters.project_id);
+  if (filters.include_resolved) params.set("include_resolved", "true");
+  if (filters.distillation_status) params.set("distillation_status", filters.distillation_status);
+
+  try {
+    const payload = await apiJson(`/api/services/${serviceId}/memory-admin/candidates?${params.toString()}`);
+    state.candidates = payload.candidates || {
+      count: 0,
+      limit: 20,
+      source_count: 0,
+      cluster_count: 0,
+      filters: {},
+      items: []
+    };
+    state.candidatesError = "";
+  } catch (error) {
+    state.candidates = {
+      ...(state.candidates || {}),
+      count: 0,
+      source_count: 0,
+      cluster_count: 0,
+      items: []
+    };
+    state.candidatesError = error.message;
+  }
+}
+
 async function loadMemoryAdminAudit(serviceId) {
   if (!supportsMemoryAdmin(serviceId)) {
     return;
@@ -1818,6 +1993,7 @@ async function loadMemoryAdminAll(serviceId) {
   }
   await Promise.all([
     loadMemoryAdminSummary(serviceId),
+    loadMemoryAdminCandidates(serviceId),
     loadMemoryAdminAudit(serviceId),
     loadMemoryAdminProjects(serviceId)
   ]);
@@ -3475,8 +3651,14 @@ function syncMemoryAdminInputsFromState(serviceId) {
     return;
   }
   const state = getMemoryAdminState(serviceId);
+  const candidateFilters = state.candidates?.filters || {};
   const auditFilters = state.audit?.filters || {};
 
+  memoryCandidatesLimitInput.value = String(Math.max(1, Math.min(200, clampLimitValue(state.candidates?.limit, 20))));
+  memoryCandidatesWorkspaceInput.value = candidateFilters.workspace_id || "";
+  memoryCandidatesProjectInput.value = candidateFilters.project_id || "";
+  memoryCandidatesStatusInput.value = candidateFilters.distillation_status || "pending";
+  memoryCandidatesIncludeResolvedInput.checked = Boolean(candidateFilters.include_resolved);
   memoryAuditLimitInput.value = String(clampLimitValue(state.audit?.limit, 50));
   memoryAuditActionInput.value = auditFilters.action || "";
   memoryAuditActorInput.value = auditFilters.actor || "";
@@ -3484,6 +3666,20 @@ function syncMemoryAdminInputsFromState(serviceId) {
   memoryAuditSinceInput.value = auditFilters.since || "";
   memoryProjectsLimitInput.value = String(clampLimitValue(state.projects?.limit, 50));
   memoryProjectsWorkspaceInput.value = state.projects?.workspace_id || "";
+}
+
+function syncMemoryCandidatesStateFromInputs(serviceId) {
+  const state = getMemoryAdminState(serviceId);
+  state.candidates = {
+    ...(state.candidates || {}),
+    limit: Math.max(1, Math.min(200, clampLimitValue(memoryCandidatesLimitInput.value, 20))),
+    filters: {
+      workspace_id: String(memoryCandidatesWorkspaceInput.value || "").trim(),
+      project_id: String(memoryCandidatesProjectInput.value || "").trim(),
+      include_resolved: Boolean(memoryCandidatesIncludeResolvedInput.checked),
+      distillation_status: String(memoryCandidatesStatusInput.value || "pending").trim() || "pending"
+    }
+  };
 }
 
 function syncMemoryAuditStateFromInputs(serviceId) {
@@ -3515,6 +3711,35 @@ async function applyMemoryAuditFilters() {
   }
   syncMemoryAuditStateFromInputs(advancedServiceId);
   await loadMemoryAdminAudit(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
+async function applyMemoryCandidatesFilters() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  syncMemoryCandidatesStateFromInputs(advancedServiceId);
+  await loadMemoryAdminCandidates(advancedServiceId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
+}
+
+async function resetMemoryCandidatesFilters() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(advancedServiceId);
+  state.candidates = {
+    ...(state.candidates || {}),
+    limit: 20,
+    filters: {
+      workspace_id: "",
+      project_id: "",
+      include_resolved: false,
+      distillation_status: "pending"
+    }
+  };
+  syncMemoryAdminInputsFromState(advancedServiceId);
+  await loadMemoryAdminCandidates(advancedServiceId);
   renderMemoryAdminForAdvanced(advancedServiceId);
 }
 
@@ -3821,11 +4046,14 @@ reloadMemoryAdminBtn?.addEventListener("click", async () => {
   if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
     return;
   }
+  syncMemoryCandidatesStateFromInputs(advancedServiceId);
   syncMemoryAuditStateFromInputs(advancedServiceId);
   syncMemoryProjectsStateFromInputs(advancedServiceId);
   await loadMemoryAdminAll(advancedServiceId);
   renderMemoryAdminForAdvanced(advancedServiceId);
 });
+applyMemoryCandidatesBtn?.addEventListener("click", applyMemoryCandidatesFilters);
+resetMemoryCandidatesBtn?.addEventListener("click", resetMemoryCandidatesFilters);
 applyMemoryAuditBtn?.addEventListener("click", applyMemoryAuditFilters);
 resetMemoryAuditBtn?.addEventListener("click", resetMemoryAuditFilters);
 reloadMemoryProjectsBtn?.addEventListener("click", reloadMemoryProjects);
