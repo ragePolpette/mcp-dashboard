@@ -265,6 +265,7 @@
               <p id="memoryDistillationRunsSummary" class="muted">Nessuna run caricata.</p>
             </div>
             <div class="memory-admin-actions">
+              <button id="reloadMemoryDistillationRunDetailBtn" type="button">Ricarica Detail</button>
               <button id="reloadMemoryDistillationRunsBtn" type="button">Ricarica Runs</button>
               <button id="resetMemoryDistillationRunsBtn" type="button">Reset Runs</button>
             </div>
@@ -272,6 +273,12 @@
           <div class="memory-admin-filters">
             <label for="memoryDistillationRunsLimitInput">Limit</label>
             <input id="memoryDistillationRunsLimitInput" type="number" value="20" min="1" max="200">
+            <label for="memoryDistillationRunsWorkspaceInput">Workspace</label>
+            <input id="memoryDistillationRunsWorkspaceInput" type="text" placeholder="workspace-id">
+            <label for="memoryDistillationRunsProjectInput">Project</label>
+            <input id="memoryDistillationRunsProjectInput" type="text" placeholder="project-id">
+            <label for="memoryDistillationRunsAgentInput">Agent</label>
+            <input id="memoryDistillationRunsAgentInput" type="text" placeholder="agent-id">
             <label for="memoryDistillationRunsStatusInput">Status</label>
             <select id="memoryDistillationRunsStatusInput">
               <option value="">all</option>
