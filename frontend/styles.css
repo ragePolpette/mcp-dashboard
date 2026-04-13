@@ -1367,6 +1367,27 @@ tbody td {
   background: rgba(182, 235, 122, 0.12);
 }
 
+.memory-admin-run-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.memory-admin-run-detail-section {
+  border: 1px solid rgba(53, 87, 124, 0.75);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(7, 15, 24, 0.24);
+}
+
+.memory-admin-run-detail-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.84rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
 #memoryAuditBody td:nth-child(1),
 #memoryProjectsBody td:nth-child(6),
 #memoryCandidatesBody td:nth-child(1) {
@@ -1409,6 +1430,10 @@ tbody td {
   }
 
   .memory-admin-grid-two {
+    grid-template-columns: 1fr;
+  }
+
+  .memory-admin-run-detail-grid {
     grid-template-columns: 1fr;
   }
 
