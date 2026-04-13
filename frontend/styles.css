@@ -1287,6 +1287,63 @@ tbody td {
   flex-wrap: wrap;
 }
 
+.memory-admin-status-row {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.memory-admin-inline-hint {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.memory-admin-status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 76px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid #35577c;
+  background: rgba(13, 26, 41, 0.55);
+  color: #d3dfea;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: lowercase;
+}
+
+.memory-admin-status-chip.idle {
+  border-color: #35577c;
+  background: rgba(13, 26, 41, 0.55);
+}
+
+.memory-admin-status-chip.prepared {
+  color: #c9e6ff;
+  border-color: #3f79b4;
+  background: rgba(18, 49, 78, 0.55);
+}
+
+.memory-admin-status-chip.reviewed {
+  color: #ffe6a8;
+  border-color: #9a7a2d;
+  background: rgba(73, 54, 12, 0.5);
+}
+
+.memory-admin-status-chip.applied {
+  color: #b8f0c7;
+  border-color: #2c8a58;
+  background: rgba(15, 59, 37, 0.5);
+}
+
+.memory-admin-status-chip.blocked,
+.memory-admin-status-chip.error {
+  color: #ffd2d2;
+  border-color: #9f3232;
+  background: rgba(95, 33, 33, 0.45);
+}
 .memory-admin-filters {
   margin-top: 10px;
   display: flex;
@@ -1441,4 +1498,6 @@ tbody td {
     max-width: 280px;
   }
 }
+
+
 
