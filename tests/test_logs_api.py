@@ -238,6 +238,86 @@ def test_memory_admin_candidates_proxy_maps_proxy_errors(monkeypatch):
     assert response.json()["detail"] == "Candidate queue unavailable"
 
 
+def test_memory_admin_prepare_distillation_proxy_forwards_payload(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_prepare(_service, payload):
+        captured.update(payload)
+        return {"status": "ok", "distillation_prepare": {"prepared_count": 1}}
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr("app.main.memory_admin_client.prepare_distillation", fake_prepare)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/services/llm-memory/memory-admin/distillation/prepare",
+        json={
+            "agent_id": "dashboard-operator",
+            "workspace_id": "ws-a",
+            "project_id": "prj-a",
+            "reason": "prepare candidate from dashboard",
+            "cluster_id": "cluster-menu",
+            "top_k": 1,
+            "include_resolved": False,
+            "distillation_status": "pending",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["distillation_prepare"]["prepared_count"] == 1
+    assert captured["cluster_id"] == "cluster-menu"
+    assert captured["agent_id"] == "dashboard-operator"
+
+
+def test_memory_admin_apply_distillation_proxy_maps_proxy_errors(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr(
+        "app.main.memory_admin_client.apply_distillation",
+        lambda _service, _payload: (_ for _ in ()).throw(
+            MemoryAdminProxyError("Distillation apply blocked", status_code=403)
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/services/llm-memory/memory-admin/distillation/apply",
+        json={
+            "agent_id": "dashboard-operator",
+            "workspace_id": "ws-a",
+            "project_id": "prj-a",
+            "reason": "preview apply from dashboard",
+            "dry_run": True,
+            "payload": {"decisions": []},
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Distillation apply blocked"
+
+
 def test_dashboard_overview_returns_runtime_logs_metrics_and_alerts(monkeypatch):
     services = [
         ServiceDefinition(

@@ -74,6 +74,33 @@ class MemoryAdminClient:
             raise MemoryAdminProxyError("Invalid llm-memory admin response shape.")
         return payload
 
+    def _post_json(self, url: str, body: dict[str, Any]) -> dict[str, Any]:
+        request = urllib.request.Request(
+            url,
+            method="POST",
+            data=json.dumps(body, ensure_ascii=True).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            try:
+                payload = json.loads(exc.read().decode("utf-8"))
+                message = payload.get("detail") or payload.get("message")
+                if not message and isinstance(payload.get("error"), dict):
+                    message = payload["error"].get("message")
+                message = message or str(exc)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                message = str(exc)
+            raise MemoryAdminProxyError(message, status_code=exc.code) from exc
+        except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise MemoryAdminProxyError(f"Unable to reach llm-memory admin surface: {exc}") from exc
+
+        if not isinstance(payload, dict):
+            raise MemoryAdminProxyError("Invalid llm-memory admin response shape.")
+        return payload
+
     def get_summary(self, service: ServiceDefinition) -> dict[str, Any]:
         return self._get_json(self._build_url(service, "/admin/summary"))
 
@@ -85,3 +112,9 @@ class MemoryAdminClient:
 
     def get_candidates(self, service: ServiceDefinition, **filters: Any) -> dict[str, Any]:
         return self._get_json(self._build_url(service, "/admin/fast-memory/candidates", filters))
+
+    def prepare_distillation(self, service: ServiceDefinition, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post_json(self._build_url(service, "/admin/fast-memory/distillation/prepare"), payload)
+
+    def apply_distillation(self, service: ServiceDefinition, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._post_json(self._build_url(service, "/admin/fast-memory/distillation/apply"), payload)
