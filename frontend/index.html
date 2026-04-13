@@ -261,6 +261,53 @@
         <section class="memory-admin-panel">
           <div class="memory-admin-header">
             <div>
+              <h3>Distillation Runs</h3>
+              <p id="memoryDistillationRunsSummary" class="muted">Nessuna run caricata.</p>
+            </div>
+            <div class="memory-admin-actions">
+              <button id="reloadMemoryDistillationRunsBtn" type="button">Ricarica Runs</button>
+              <button id="resetMemoryDistillationRunsBtn" type="button">Reset Runs</button>
+            </div>
+          </div>
+          <div class="memory-admin-filters">
+            <label for="memoryDistillationRunsLimitInput">Limit</label>
+            <input id="memoryDistillationRunsLimitInput" type="number" value="20" min="1" max="200">
+            <label for="memoryDistillationRunsStatusInput">Status</label>
+            <select id="memoryDistillationRunsStatusInput">
+              <option value="">all</option>
+              <option value="prepared">prepared</option>
+              <option value="reviewed">reviewed</option>
+              <option value="applied">applied</option>
+            </select>
+          </div>
+          <div class="memory-admin-grid-two">
+            <div class="query-pane memory-admin-table-pane">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Status</th>
+                    <th>Scope</th>
+                    <th>Counts</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="memoryDistillationRunsBody"></tbody>
+              </table>
+            </div>
+            <div class="query-pane memory-admin-table-pane">
+              <div class="memory-admin-subheader">
+                <strong>Run Detail</strong>
+              </div>
+              <pre id="memoryDistillationRunDetailPre" class="message-preview"></pre>
+            </div>
+          </div>
+        </section>
+
+        <section class="memory-admin-panel">
+          <div class="memory-admin-header">
+            <div>
               <h3>Audit Trail</h3>
               <p id="memoryAuditSummary" class="muted">Nessun audit caricato.</p>
             </div>
