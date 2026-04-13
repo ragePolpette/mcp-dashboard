@@ -89,7 +89,11 @@ const applyMemoryDistillationBtn = document.getElementById("applyMemoryDistillat
 const resetMemoryDistillationBtn = document.getElementById("resetMemoryDistillationBtn");
 const memoryDistillationRunsSummary = document.getElementById("memoryDistillationRunsSummary");
 const memoryDistillationRunsLimitInput = document.getElementById("memoryDistillationRunsLimitInput");
+const memoryDistillationRunsWorkspaceInput = document.getElementById("memoryDistillationRunsWorkspaceInput");
+const memoryDistillationRunsProjectInput = document.getElementById("memoryDistillationRunsProjectInput");
+const memoryDistillationRunsAgentInput = document.getElementById("memoryDistillationRunsAgentInput");
 const memoryDistillationRunsStatusInput = document.getElementById("memoryDistillationRunsStatusInput");
+const reloadMemoryDistillationRunDetailBtn = document.getElementById("reloadMemoryDistillationRunDetailBtn");
 const reloadMemoryDistillationRunsBtn = document.getElementById("reloadMemoryDistillationRunsBtn");
 const resetMemoryDistillationRunsBtn = document.getElementById("resetMemoryDistillationRunsBtn");
 const memoryDistillationRunsBody = document.getElementById("memoryDistillationRunsBody");
@@ -1379,6 +1383,9 @@ function renderMemoryDistillationRunsPanel(serviceId) {
   const runs = state.runs || { count: 0, limit: 20, filters: {}, items: [], selectedRunId: "", selectedRun: null };
   const filters = runs.filters || {};
   memoryDistillationRunsSummary.textContent = `Runs: ${runs.count || 0} | Limit ${runs.limit || 20}` +
+    `${filters.workspace_id ? ` | Workspace ${filters.workspace_id}` : ""}` +
+    `${filters.project_id ? ` | Project ${filters.project_id}` : ""}` +
+    `${filters.agent_id ? ` | Agent ${filters.agent_id}` : ""}` +
     `${filters.status ? ` | Status ${filters.status}` : ""}`;
   renderMemoryDistillationRunDetail(runs.selectedRun || null);
 
@@ -4167,6 +4174,9 @@ function syncMemoryAdminInputsFromState(serviceId) {
   memoryCandidatesStatusInput.value = candidateFilters.distillation_status || "pending";
   memoryCandidatesIncludeResolvedInput.checked = Boolean(candidateFilters.include_resolved);
   memoryDistillationRunsLimitInput.value = String(Math.max(1, Math.min(200, clampLimitValue(state.runs?.limit, 20))));
+  memoryDistillationRunsWorkspaceInput.value = state.runs?.filters?.workspace_id || "";
+  memoryDistillationRunsProjectInput.value = state.runs?.filters?.project_id || "";
+  memoryDistillationRunsAgentInput.value = state.runs?.filters?.agent_id || "";
   memoryDistillationRunsStatusInput.value = state.runs?.filters?.status || "";
   memoryAuditLimitInput.value = String(clampLimitValue(state.audit?.limit, 50));
   memoryAuditActionInput.value = auditFilters.action || "";
@@ -4222,9 +4232,26 @@ function syncMemoryDistillationRunsStateFromInputs(serviceId) {
     limit: Math.max(1, Math.min(200, clampLimitValue(memoryDistillationRunsLimitInput.value, 20))),
     filters: {
       ...(state.runs?.filters || {}),
+      workspace_id: String(memoryDistillationRunsWorkspaceInput.value || "").trim(),
+      project_id: String(memoryDistillationRunsProjectInput.value || "").trim(),
+      agent_id: String(memoryDistillationRunsAgentInput.value || "").trim(),
       status: String(memoryDistillationRunsStatusInput.value || "").trim()
     }
   };
+}
+
+async function reloadSelectedMemoryDistillationRun() {
+  if (!advancedServiceId || !supportsMemoryAdmin(advancedServiceId)) {
+    return;
+  }
+  const state = getMemoryAdminState(advancedServiceId);
+  const selectedRunId = String(state.runs?.selectedRunId || "").trim();
+  if (!selectedRunId) {
+    renderMemoryAdminForAdvanced(advancedServiceId);
+    return;
+  }
+  await loadMemoryDistillationRunDetail(advancedServiceId, selectedRunId);
+  renderMemoryAdminForAdvanced(advancedServiceId);
 }
 
 async function reloadMemoryDistillationRuns() {
@@ -4246,6 +4273,9 @@ async function resetMemoryDistillationRuns() {
     limit: 20,
     filters: {
       ...(state.runs?.filters || {}),
+      workspace_id: "",
+      project_id: "",
+      agent_id: "",
       status: ""
     },
     selectedRunId: "",
@@ -4644,6 +4674,7 @@ resetMemoryDistillationBtn?.addEventListener("click", () => {
   syncMemoryDistillationInputsFromState(advancedServiceId);
   renderMemoryAdminForAdvanced(advancedServiceId);
 });
+reloadMemoryDistillationRunDetailBtn?.addEventListener("click", reloadSelectedMemoryDistillationRun);
 reloadMemoryDistillationRunsBtn?.addEventListener("click", reloadMemoryDistillationRuns);
 resetMemoryDistillationRunsBtn?.addEventListener("click", resetMemoryDistillationRuns);
 applyMemoryAuditBtn?.addEventListener("click", applyMemoryAuditFilters);
