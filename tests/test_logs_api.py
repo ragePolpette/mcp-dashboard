@@ -165,6 +165,79 @@ def test_memory_admin_projects_proxy_maps_proxy_errors(monkeypatch):
     assert response.json()["detail"] == "Unable to reach llm-memory admin surface"
 
 
+def test_memory_admin_candidates_proxy_forwards_filters(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_get_candidates(_service, **filters):
+        captured.update(filters)
+        return {
+            "status": "ok",
+            "candidates": {
+                "count": 1,
+                "items": [{"cluster_id": "cluster-menu", "candidate_score": 0.83}],
+            },
+        }
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr("app.main.memory_admin_client.get_candidates", fake_get_candidates)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/services/llm-memory/memory-admin/candidates"
+        "?limit=15&workspace_id=ws-a&project_id=prj-a&include_resolved=true&distillation_status=pending"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["candidates"]["count"] == 1
+    assert captured == {
+        "limit": 15,
+        "workspace_id": "ws-a",
+        "project_id": "prj-a",
+        "include_resolved": True,
+        "distillation_status": "pending",
+    }
+
+
+def test_memory_admin_candidates_proxy_maps_proxy_errors(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr(
+        "app.main.memory_admin_client.get_candidates",
+        lambda _service, **_filters: (_ for _ in ()).throw(
+            MemoryAdminProxyError("Candidate queue unavailable", status_code=502)
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/services/llm-memory/memory-admin/candidates?limit=10")
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "Candidate queue unavailable"
+
+
 def test_dashboard_overview_returns_runtime_logs_metrics_and_alerts(monkeypatch):
     services = [
         ServiceDefinition(
