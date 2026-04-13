@@ -848,6 +848,41 @@ def service_memory_admin_candidates(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
+@app.get("/api/services/{service_id}/memory-admin/distillation/runs")
+def service_memory_admin_distillation_runs(
+    service_id: str,
+    limit: int = Query(default=20, ge=1, le=200),
+    workspace_id: str | None = Query(default=None),
+    project_id: str | None = Query(default=None),
+    agent_id: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_distillation_runs(
+            service,
+            limit=limit,
+            workspace_id=workspace_id,
+            project_id=project_id,
+            agent_id=agent_id,
+            status=status,
+        )
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@app.get("/api/services/{service_id}/memory-admin/distillation/runs/{run_id}")
+def service_memory_admin_distillation_run(
+    service_id: str,
+    run_id: str,
+) -> dict[str, Any]:
+    service = _memory_admin_service_or_400(service_id)
+    try:
+        return memory_admin_client.get_distillation_run(service, run_id)
+    except MemoryAdminProxyError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
 @app.post("/api/services/{service_id}/memory-admin/distillation/prepare")
 def service_memory_admin_prepare_distillation(
     service_id: str,
