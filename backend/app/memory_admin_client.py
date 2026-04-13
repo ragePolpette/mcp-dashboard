@@ -82,3 +82,6 @@ class MemoryAdminClient:
 
     def get_projects(self, service: ServiceDefinition, **filters: Any) -> dict[str, Any]:
         return self._get_json(self._build_url(service, "/admin/projects", filters))
+
+    def get_candidates(self, service: ServiceDefinition, **filters: Any) -> dict[str, Any]:
+        return self._get_json(self._build_url(service, "/admin/fast-memory/candidates", filters))
