@@ -76,6 +76,8 @@ const applyMemoryCandidatesBtn = document.getElementById("applyMemoryCandidatesB
 const resetMemoryCandidatesBtn = document.getElementById("resetMemoryCandidatesBtn");
 const memoryCandidatesBody = document.getElementById("memoryCandidatesBody");
 const memoryDistillationSummary = document.getElementById("memoryDistillationSummary");
+const memoryDistillationStateBadge = document.getElementById("memoryDistillationStateBadge");
+const memoryDistillationGuardrail = document.getElementById("memoryDistillationGuardrail");
 const memoryDistillationAgentInput = document.getElementById("memoryDistillationAgentInput");
 const memoryDistillationUserInput = document.getElementById("memoryDistillationUserInput");
 const memoryDistillationWorkspaceInput = document.getElementById("memoryDistillationWorkspaceInput");
@@ -1243,34 +1245,93 @@ function renderMemoryCandidatesTable(serviceId) {
   memoryCandidatesBody.appendChild(frag);
 }
 
+function getMemoryDistillationStatusMeta(status) {
+  switch (String(status || "").trim().toLowerCase()) {
+    case "prepared":
+      return { key: "prepared", label: "prepared" };
+    case "reviewed":
+      return { key: "reviewed", label: "reviewed" };
+    case "applied":
+      return { key: "applied", label: "applied" };
+    case "blocked":
+      return { key: "blocked", label: "blocked" };
+    case "error":
+      return { key: "error", label: "error" };
+    default:
+      return { key: "idle", label: "idle" };
+  }
+}
+
+function renderMemoryDistillationStatusChip(target, status) {
+  if (!target) {
+    return;
+  }
+  const meta = getMemoryDistillationStatusMeta(status);
+  target.className = `memory-admin-status-chip ${meta.key}`;
+  target.textContent = meta.label;
+}
 function renderMemoryDistillationPanel(serviceId) {
   const state = getMemoryAdminState(serviceId);
   const distillation = state.distillation || {};
   const prepared = distillation.prepared;
   const applyResult = distillation.applyResult;
+  const activeRunId = String(distillation.currentRunId || prepared?.run_id || "").trim();
+  const hasDraft = Boolean(String(distillation.applyDraft || "").trim());
 
-  let statusText = distillation.currentRunId
-    ? `Run attiva ${distillation.currentRunId}.`
+  let status = activeRunId ? "prepared" : "idle";
+  let statusText = activeRunId
+    ? `Run attiva ${activeRunId}.`
     : "Nessun pack preparato.";
+  let guardrailText = activeRunId
+    ? "Workflow pronto: puoi fare preview o apply sulla run attiva."
+    : "Prepare una run o fai bind da Distillation Runs prima di procedere.";
+
   if (distillation.preparedError) {
+    status = /FAST_MEMORY_AGENT_DISTILLATION_ENABLED/i.test(distillation.preparedError) ? "blocked" : "error";
     statusText = `Errore prepare: ${distillation.preparedError}`;
+    guardrailText = status === "blocked"
+      ? "Abilita FAST_MEMORY_AGENT_DISTILLATION_ENABLED nel backend llm-memory per preparare pack agentici."
+      : "Correggi l'errore di prepare prima di continuare.";
   } else if (distillation.applyError) {
+    status = /FAST_MEMORY_AGENT_DISTILLATION_APPLY_ENABLED/i.test(distillation.applyError) ? "blocked" : "error";
     statusText = `Errore apply: ${distillation.applyError}`;
+    guardrailText = status === "blocked"
+      ? "Abilita FAST_MEMORY_AGENT_DISTILLATION_APPLY_ENABLED nel backend llm-memory per applicare output agentici."
+      : "Correggi l'errore di apply o rivedi il JSON prima di riprovare.";
   } else if (applyResult && applyResult.success) {
+    status = applyResult.dry_run ? "reviewed" : "applied";
     statusText = applyResult.dry_run
-      ? `Preview apply completata su ${applyResult.count || 0} decisioni${distillation.currentRunId ? ` | run ${distillation.currentRunId}` : ""}.`
-      : `Apply completato su ${applyResult.count || 0} decisioni${distillation.currentRunId ? ` | run ${distillation.currentRunId}` : ""}.`;
+      ? `Preview apply completata su ${applyResult.count || 0} decisioni${activeRunId ? ` | run ${activeRunId}` : ""}.`
+      : `Apply completato su ${applyResult.count || 0} decisioni${activeRunId ? ` | run ${activeRunId}` : ""}.`;
+    guardrailText = applyResult.dry_run
+      ? "Preview completata: puoi rivedere l'output e applicarlo davvero quando sei pronto."
+      : "Run applicata: ricarica candidates, audit e projects per vedere lo stato aggiornato.";
   } else if (prepared) {
+    status = "prepared";
     statusText = `Prepared ${prepared.prepared_count || 0} candidati` +
       `${distillation.preparedClusterId ? ` | cluster ${distillation.preparedClusterId}` : ""}` +
-      `${distillation.currentRunId ? ` | run ${distillation.currentRunId}` : ""}`;
+      `${activeRunId ? ` | run ${activeRunId}` : ""}`;
+    guardrailText = hasDraft
+      ? "Pack pronto e JSON presente: usa Preview Apply per controllare il risultato prima dell'apply reale."
+      : "Pack pronto: incolla l'output JSON dell'agente per eseguire preview o apply.";
   }
 
+  const applyBlocked = !activeRunId || !hasDraft;
+  const applyHint = !activeRunId
+    ? "Prepare o fai bind di una run prima di usare preview/apply."
+    : (!hasDraft ? "Incolla l'output JSON dell'agente prima di usare preview/apply." : "");
+
   memoryDistillationSummary.textContent = statusText;
+  memoryDistillationGuardrail.textContent = applyHint || guardrailText;
+  renderMemoryDistillationStatusChip(memoryDistillationStateBadge, status);
+  previewMemoryDistillationApplyBtn.disabled = applyBlocked;
+  applyMemoryDistillationBtn.disabled = applyBlocked;
+  previewMemoryDistillationApplyBtn.title = applyHint;
+  applyMemoryDistillationBtn.title = applyHint;
   memoryDistillationPreparedPre.textContent = prepared
     ? JSON.stringify(
         {
-          run_id: prepared.run_id || distillation.currentRunId || null,
+          run_id: prepared.run_id || activeRunId || null,
           prepared_count: prepared.prepared_count,
           reason: prepared.reason,
           protection: prepared.protection,
@@ -1287,7 +1348,6 @@ function renderMemoryDistillationPanel(serviceId) {
   }
   memoryDistillationDryRunInput.checked = distillation.dryRun !== false;
 }
-
 function clearMemoryDistillationRunsRows() {
   memoryDistillationRunsBody.innerHTML = "";
 }
@@ -1405,7 +1465,9 @@ function renderMemoryDistillationRunsPanel(serviceId) {
     runTd.textContent = item.id || "n/d";
 
     const statusTd = document.createElement("td");
-    statusTd.textContent = item.status || "n/d";
+    const statusChip = document.createElement("span");
+    renderMemoryDistillationStatusChip(statusChip, item.status || "idle");
+    statusTd.appendChild(statusChip);
 
     const scopeTd = document.createElement("td");
     scopeTd.textContent = `${item.workspace_id || "n/d"} / ${item.project_id || "n/d"}`;
@@ -1420,7 +1482,10 @@ function renderMemoryDistillationRunsPanel(serviceId) {
     const actionTd = document.createElement("td");
     const openBtn = document.createElement("button");
     openBtn.type = "button";
-    openBtn.textContent = "Bind";
+    const isActiveRun = Boolean(runs.selectedRunId && item.id === runs.selectedRunId);
+    openBtn.textContent = isActiveRun ? "Bound" : "Bind";
+    openBtn.disabled = isActiveRun;
+    openBtn.title = isActiveRun ? "Questa run e' gia' attiva nel workflow." : "Usa questa run come contesto attivo del workflow.";
     openBtn.addEventListener("click", () => selectMemoryDistillationRun(serviceId, item.id));
     actionTd.appendChild(openBtn);
 
@@ -4727,6 +4792,10 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
+
+
+
+
 
 
 
