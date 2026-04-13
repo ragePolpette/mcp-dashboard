@@ -12,6 +12,8 @@ __pycache__/
 .pytest_cache/
 runtime/
 *.log
+AGENTS.md
+CLAUDE.md
 
 # Planning artifacts (do not track)
 *PLAN*.md

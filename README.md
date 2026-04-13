@@ -1,47 +1,34 @@
 # MCP Dashboard
 
-MCP Dashboard is a local control plane for managing and observing a workstation-scale MCP stack from one place.
+`mcp-dashboard` is a local control plane for running and observing a workstation-scale MCP stack from one place.
 
-It combines service lifecycle control, structured log inspection, secret-aware runtime options, a local vault, and SQL target registry management in a single dashboard. The project is part of the broader Yetzirah toolchain and is designed for local-first developer environments rather than multi-tenant cloud deployment.
+It combines service lifecycle control, structured log inspection, secret-aware runtime options, a local vault, SQL target registry management, and a service-specific admin surface for `llm-memory`.
 
 ## What It Does
 
 - starts, stops, and restarts MCP services from the UI
-- shows runtime state per service, including pid, port, and health
+- shows runtime state per service, including pid, port, health, and recent events
 - streams and filters normalized logs from multiple service-specific parsers
 - stores reusable local secrets through `vault://` references without exposing cleartext values in the UI
 - manages runtime-editable SQL targets exported for `llm-sql-db-mcp`
-- exposes read-only admin views for `llm-memory`
-
-## Security Model
-
-This dashboard is designed to make local operator workflows safer without pretending to be a cloud secret-management platform.
-
-The key ideas are:
-
-- services can consume `vault://` references instead of hardcoded secrets
-- the UI works with secret-aware runtime options rather than round-tripping cleartext values
-- the local vault persists references and encrypted local state instead of normalizing secret sprawl across config files
-- operators can manage local service orchestration and secret-backed runtime settings from the same control plane
-
-The goal is to reduce accidental leakage in day-to-day workstation operations while keeping the operator experience practical.
+- exposes `llm-memory` admin views for summary, audit, projects, fast-memory candidates, and distillation runs
 
 ## Architecture
 
 The dashboard is split into two layers:
 
 - `backend/`: FastAPI control plane for service management, log ingestion, vault handling, DB target registry, and service-specific proxy endpoints
-- `frontend/`: lightweight browser UI for widgets, advanced inspection panels, settings, and operator actions
+- `frontend/`: browser UI for service cards, advanced panels, settings, and operator workflows
 
-The backend owns service orchestration and filesystem state under `runtime/`. The frontend stays intentionally thin and consumes the backend API surface.
+The backend owns orchestration and filesystem state under `runtime/`. The frontend stays intentionally thin and consumes the backend API surface.
 
 ## Key Capabilities
 
 - Service control: start, stop, restart, and status endpoints for registered services
-- Log pipeline: parser chain plus rule engine for enriched events, alerts, and UI filtering
-- Secret management: in-memory secret options and persistent local vault references
-- DB target registry: runtime editing and export for policy-driven SQL MCP services
-- Memory admin proxy: summary, audit, and project views for `llm-memory`
+- Log inspection: normalized logs, alerts, activity, and query inspection per service capability
+- Secret-aware runtime options: local vault references without round-tripping cleartext values
+- DB target registry: local editing and runtime export for policy-driven SQL MCP services
+- Memory admin proxy: summary, audit, projects, candidate queue, distillation workflow, and run history for `llm-memory`
 
 ## Project Layout
 
@@ -61,7 +48,7 @@ mcp-dashboard/
 Requirements:
 
 - Python 3.11+
-- `fastapi`, `uvicorn`, and backend requirements from `backend/requirements.txt`
+- backend dependencies from `backend/requirements.txt`
 
 Quick start on Windows:
 
@@ -90,28 +77,26 @@ Default endpoints:
 - `GET /api/services/{service_id}/logs`
 - `GET /api/vault`
 - `GET /api/db-targets`
+- `GET /api/services/{service_id}/memory-admin/summary`
+- `GET /api/services/{service_id}/memory-admin/candidates`
+- `GET /api/services/{service_id}/memory-admin/distillation/runs`
+- `POST /api/services/{service_id}/memory-admin/distillation/prepare`
+- `POST /api/services/{service_id}/memory-admin/distillation/apply`
+
+## Security Model
+
+This dashboard is designed to make local operator workflows safer without pretending to be a cloud secret-management platform.
+
+The key rules are:
+
+- services consume `vault://` references instead of hardcoded secrets where possible
+- the UI works with secret-aware runtime options rather than round-tripping cleartext values
+- secret values are not returned in cleartext once stored through dashboard flows
+- service-specific admin actions are proxied through explicit backend endpoints instead of exposing raw shell access
 
 ## Status
 
-This repository is in active development. The current codebase is already usable as a local operations dashboard for MCP services, but the public-facing documentation and visual presentation are still being refined.
-
-The current emphasis is on:
-
-- operational clarity for local service stacks
-- safer runtime configuration handling
-- structured observability for MCP-oriented workflows
-
-## Notes
-
-- This project is local-first and workstation-oriented by design.
-- Secret values are never returned in cleartext once stored through the dashboard flows.
-- The log pipeline is intentionally extensible so new service parsers and rule sets can be added without redesigning the UI.
-
-## Production Note
-
-This repository explores a local-first control-plane approach to service orchestration, secret references, and vault-backed runtime resolution.
-
-For production environments, I would generally lean on established secret-management platforms or managed secret workflows unless there is a strong operational reason to own that layer directly. The value of this project is in the control-plane design, operator workflow, and local integration model rather than in replacing mature enterprise secret platforms.
+The project is usable today as a local operations dashboard for MCP services and is oriented toward serious workstation and small-team environments rather than public cloud deployment.
 
 ## Related Repositories
 
@@ -119,7 +104,3 @@ For production environments, I would generally lean on established secret-manage
 - `llm_context`
 - `llm-bitbucket-mcp`
 - `llm-sql-db-mcp`
-
-## Development Process
-
-Built with AI-assisted workflows, while architecture, tradeoffs, integration, review, and validation were directed by the author.
