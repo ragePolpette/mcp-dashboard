@@ -113,6 +113,12 @@ class MemoryAdminClient:
     def get_candidates(self, service: ServiceDefinition, **filters: Any) -> dict[str, Any]:
         return self._get_json(self._build_url(service, "/admin/fast-memory/candidates", filters))
 
+    def get_distillation_runs(self, service: ServiceDefinition, **filters: Any) -> dict[str, Any]:
+        return self._get_json(self._build_url(service, "/admin/fast-memory/distillation/runs", filters))
+
+    def get_distillation_run(self, service: ServiceDefinition, run_id: str) -> dict[str, Any]:
+        return self._get_json(self._build_url(service, f"/admin/fast-memory/distillation/runs/{run_id}"))
+
     def prepare_distillation(self, service: ServiceDefinition, payload: dict[str, Any]) -> dict[str, Any]:
         return self._post_json(self._build_url(service, "/admin/fast-memory/distillation/prepare"), payload)
 
