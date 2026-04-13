@@ -93,6 +93,12 @@ const memoryDistillationRunsStatusInput = document.getElementById("memoryDistill
 const reloadMemoryDistillationRunsBtn = document.getElementById("reloadMemoryDistillationRunsBtn");
 const resetMemoryDistillationRunsBtn = document.getElementById("resetMemoryDistillationRunsBtn");
 const memoryDistillationRunsBody = document.getElementById("memoryDistillationRunsBody");
+const memoryDistillationRunDetailMeta = document.getElementById("memoryDistillationRunDetailMeta");
+const memoryDistillationRunReasonPre = document.getElementById("memoryDistillationRunReasonPre");
+const memoryDistillationRunClustersPre = document.getElementById("memoryDistillationRunClustersPre");
+const memoryDistillationRunSourcesPre = document.getElementById("memoryDistillationRunSourcesPre");
+const memoryDistillationRunPreparedPre = document.getElementById("memoryDistillationRunPreparedPre");
+const memoryDistillationRunApplyPre = document.getElementById("memoryDistillationRunApplyPre");
 const memoryDistillationRunDetailPre = document.getElementById("memoryDistillationRunDetailPre");
 const memoryAuditSummary = document.getElementById("memoryAuditSummary");
 const memoryAuditLimitInput = document.getElementById("memoryAuditLimitInput");
@@ -1282,6 +1288,64 @@ function clearMemoryDistillationRunsRows() {
   memoryDistillationRunsBody.innerHTML = "";
 }
 
+function renderMemoryDistillationRunDetail(run) {
+  memoryDistillationRunDetailMeta.innerHTML = "";
+  if (!run) {
+    memoryDistillationRunReasonPre.textContent = "";
+    memoryDistillationRunClustersPre.textContent = "";
+    memoryDistillationRunSourcesPre.textContent = "";
+    memoryDistillationRunPreparedPre.textContent = "";
+    memoryDistillationRunApplyPre.textContent = "";
+    memoryDistillationRunDetailPre.textContent = "";
+    return;
+  }
+
+  const cards = [
+    ["Run", run.id || "n/d"],
+    ["Status", run.status || "n/d"],
+    ["Agent", run.agent_id || "n/d"],
+    ["Workspace", run.workspace_id || "n/d"],
+    ["Project", run.project_id || "n/d"],
+    ["Prepared", formatTimestamp(run.prepared_at)],
+    ["Reviewed", formatTimestamp(run.reviewed_at)],
+    ["Applied", formatTimestamp(run.applied_at)],
+  ];
+  for (const [label, value] of cards) {
+    memoryDistillationRunDetailMeta.appendChild(createSummaryCard(label, value));
+  }
+
+  memoryDistillationRunReasonPre.textContent = run.reason || "";
+  memoryDistillationRunClustersPre.textContent = Array.isArray(run.cluster_ids) && run.cluster_ids.length
+    ? run.cluster_ids.join("\n")
+    : "";
+  memoryDistillationRunSourcesPre.textContent = Array.isArray(run.source_entry_ids) && run.source_entry_ids.length
+    ? run.source_entry_ids.join("\n")
+    : "";
+
+  const preparedPayload = run.prepared_payload && typeof run.prepared_payload === "object"
+    ? {
+        prepared_count: run.prepared_count ?? 0,
+        prompt: run.prepared_payload.prompt || null,
+        contract: run.prepared_payload.contract || null,
+        candidates: run.prepared_payload.candidates || [],
+      }
+    : null;
+  const applyPayload = run.apply_result_payload && typeof run.apply_result_payload === "object"
+    ? {
+        apply_result_count: run.apply_result_count ?? 0,
+        results: run.apply_result_payload.results || [],
+      }
+    : null;
+
+  memoryDistillationRunPreparedPre.textContent = preparedPayload
+    ? JSON.stringify(preparedPayload, null, 2)
+    : "";
+  memoryDistillationRunApplyPre.textContent = applyPayload
+    ? JSON.stringify(applyPayload, null, 2)
+    : "";
+  memoryDistillationRunDetailPre.textContent = JSON.stringify(run, null, 2);
+}
+
 async function selectMemoryDistillationRun(serviceId, runId) {
   if (!runId) {
     return;
@@ -1316,7 +1380,7 @@ function renderMemoryDistillationRunsPanel(serviceId) {
   const filters = runs.filters || {};
   memoryDistillationRunsSummary.textContent = `Runs: ${runs.count || 0} | Limit ${runs.limit || 20}` +
     `${filters.status ? ` | Status ${filters.status}` : ""}`;
-  memoryDistillationRunDetailPre.textContent = runs.selectedRun ? JSON.stringify(runs.selectedRun, null, 2) : "";
+  renderMemoryDistillationRunDetail(runs.selectedRun || null);
 
   if (!Array.isArray(runs.items) || runs.items.length === 0) {
     appendEmptyTableRow(memoryDistillationRunsBody, 6, "Nessuna run per i filtri correnti.");
