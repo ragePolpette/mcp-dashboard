@@ -354,6 +354,47 @@ def test_memory_admin_prepare_distillation_proxy_forwards_payload(monkeypatch):
     assert captured["agent_id"] == "dashboard-operator"
 
 
+def test_memory_admin_apply_distillation_proxy_forwards_run_id(monkeypatch):
+    service = ServiceDefinition(
+        service_id="llm-memory",
+        name="LLM Memory",
+        capabilities=["memory_admin"],
+        log_sources=[ServiceLogSource(path=Path("mem.log"), channel="stderr")],
+        control=ServiceControlDefinition(
+            workdir=Path("."),
+            start_command=["python", "-m", "mem"],
+            health_url="http://127.0.0.1:8767/health",
+        ),
+    )
+    captured: dict[str, object] = {}
+
+    def fake_apply(_service, payload):
+        captured.update(payload)
+        return {"status": "ok", "distillation_apply": {"success": True, "count": 1, "run_id": payload.get("run_id")}}
+
+    monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
+    monkeypatch.setattr("app.main.memory_admin_client.apply_distillation", fake_apply)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/services/llm-memory/memory-admin/distillation/apply",
+        json={
+            "agent_id": "dashboard-operator",
+            "workspace_id": "ws-a",
+            "project_id": "prj-a",
+            "reason": "preview apply from dashboard",
+            "run_id": "run-42",
+            "dry_run": True,
+            "payload": {"decisions": []},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["distillation_apply"]["run_id"] == "run-42"
+    assert captured["run_id"] == "run-42"
+
+
+
 def test_memory_admin_apply_distillation_proxy_maps_proxy_errors(monkeypatch):
     service = ServiceDefinition(
         service_id="llm-memory",

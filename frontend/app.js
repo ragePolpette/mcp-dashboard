@@ -1239,15 +1239,17 @@ function renderMemoryDistillationPanel(serviceId) {
   const prepared = distillation.prepared;
   const applyResult = distillation.applyResult;
 
-  let statusText = "Nessun pack preparato.";
+  let statusText = distillation.currentRunId
+    ? `Run attiva ${distillation.currentRunId}.`
+    : "Nessun pack preparato.";
   if (distillation.preparedError) {
     statusText = `Errore prepare: ${distillation.preparedError}`;
   } else if (distillation.applyError) {
     statusText = `Errore apply: ${distillation.applyError}`;
   } else if (applyResult && applyResult.success) {
     statusText = applyResult.dry_run
-      ? `Preview apply completata su ${applyResult.count || 0} decisioni.`
-      : `Apply completato su ${applyResult.count || 0} decisioni.`;
+      ? `Preview apply completata su ${applyResult.count || 0} decisioni${distillation.currentRunId ? ` | run ${distillation.currentRunId}` : ""}.`
+      : `Apply completato su ${applyResult.count || 0} decisioni${distillation.currentRunId ? ` | run ${distillation.currentRunId}` : ""}.`;
   } else if (prepared) {
     statusText = `Prepared ${prepared.prepared_count || 0} candidati` +
       `${distillation.preparedClusterId ? ` | cluster ${distillation.preparedClusterId}` : ""}` +
@@ -1285,6 +1287,17 @@ async function selectMemoryDistillationRun(serviceId, runId) {
     return;
   }
   await loadMemoryDistillationRunDetail(serviceId, runId);
+  const state = getMemoryAdminState(serviceId);
+  const selectedRun = state.runs?.selectedRun || null;
+  state.distillation = {
+    ...(state.distillation || {}),
+    currentRunId: runId,
+    prepared: selectedRun?.prepared_payload || state.distillation?.prepared || null,
+    preparedClusterId: Array.isArray(selectedRun?.cluster_ids) && selectedRun.cluster_ids.length === 1
+      ? selectedRun.cluster_ids[0]
+      : (state.distillation?.preparedClusterId || "")
+  };
+  syncMemoryDistillationInputsFromState(serviceId);
   renderMemoryAdminForAdvanced(serviceId);
 }
 
@@ -1336,7 +1349,7 @@ function renderMemoryDistillationRunsPanel(serviceId) {
     const actionTd = document.createElement("td");
     const openBtn = document.createElement("button");
     openBtn.type = "button";
-    openBtn.textContent = "Open";
+    openBtn.textContent = "Bind";
     openBtn.addEventListener("click", () => selectMemoryDistillationRun(serviceId, item.id));
     actionTd.appendChild(openBtn);
 
@@ -2346,6 +2359,18 @@ async function applyMemoryDistillation(serviceId, dryRun) {
   const state = getMemoryAdminState(serviceId);
   syncMemoryDistillationStateFromInputs(serviceId);
   const operator = state.distillation?.operator || {};
+  const activeRunId = String(state.distillation?.currentRunId || state.distillation?.prepared?.run_id || "").trim();
+  if (!activeRunId) {
+    state.distillation = {
+      ...(state.distillation || {}),
+      dryRun,
+      applyError: "Prepare o seleziona una distillation run prima di eseguire preview/apply.",
+      applyResult: null
+    };
+    renderMemoryAdminForAdvanced(serviceId);
+    return;
+  }
+
   let parsed;
   try {
     parsed = JSON.parse(state.distillation?.applyDraft || "{}");
@@ -2366,6 +2391,7 @@ async function applyMemoryDistillation(serviceId, dryRun) {
     workspace_id: operator.workspace_id || null,
     project_id: operator.project_id || null,
     reason: operator.reason || "apply distillation from dashboard",
+    run_id: activeRunId,
     dry_run: Boolean(dryRun),
     payload: parsed
   };
@@ -2389,7 +2415,7 @@ async function applyMemoryDistillation(serviceId, dryRun) {
       dryRun,
       applyError: "",
       applyResult: response.distillation_apply || null,
-      currentRunId: response.distillation_apply?.run_id || state.distillation?.currentRunId || ""
+      currentRunId: response.distillation_apply?.run_id || activeRunId || state.distillation?.currentRunId || ""
     };
     if (!dryRun) {
       await Promise.all([
@@ -2407,7 +2433,8 @@ async function applyMemoryDistillation(serviceId, dryRun) {
       ...(state.distillation || {}),
       dryRun,
       applyError: error.message,
-      applyResult: null
+      applyResult: null,
+      currentRunId: activeRunId
     };
   }
 

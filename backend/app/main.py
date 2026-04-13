@@ -112,6 +112,7 @@ class MemoryDistillationApplyPayload(BaseModel):
     workspace_id: str | None = None
     project_id: str | None = None
     reason: str = ""
+    run_id: str | None = None
     dry_run: bool = True
     payload: dict[str, Any] = Field(default_factory=dict)
 
