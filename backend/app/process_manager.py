@@ -44,7 +44,11 @@ class ServiceProcessManager:
             self._locks[service_id] = lock
         return lock
 
-    def status(self, service: ServiceDefinition) -> dict:
+    def status(
+        self,
+        service: ServiceDefinition,
+        env_overrides: dict[str, str] | None = None,
+    ) -> dict:
         control = service.control
         if control is None:
             return asdict(
@@ -68,7 +72,7 @@ class ServiceProcessManager:
 
         running = bool(pid_running or port_running or pid_from_port)
         pid = pid_from_port or pid_from_file
-        health_state = self._probe_health(control.health_url)
+        health_state = self._probe_health(control.health_url, env_overrides=env_overrides)
 
         if control.pid_file and pid_from_file and not pid_running and not pid_from_port:
             try:
@@ -113,7 +117,7 @@ class ServiceProcessManager:
 
     def _start_unlocked(self, service: ServiceDefinition, env_overrides: dict[str, str] | None = None) -> dict:
         control = self._require_control(service)
-        before = self.status(service)
+        before = self.status(service, env_overrides=env_overrides)
         if before["running"]:
             return {
                 "ok": True,
@@ -152,7 +156,7 @@ class ServiceProcessManager:
             control.pid_file.write_text(str(proc.pid), encoding="utf-8")
 
         self._wait_startup(control)
-        after = self.status(service)
+        after = self.status(service, env_overrides=env_overrides)
 
         return {
             "ok": bool(after["running"]),
@@ -368,10 +372,22 @@ class ServiceProcessManager:
                 return int(line)
         return None
 
-    def _probe_health(self, url: str | None) -> dict[str, object | None]:
+    def _probe_health(
+        self,
+        url: str | None,
+        env_overrides: dict[str, str] | None = None,
+    ) -> dict[str, object | None]:
         if not url:
             return {"ok": None, "payload": None}
-        req = urllib.request.Request(url, method="GET")
+        headers: dict[str, str] = {}
+        internal_api_key = ""
+        if env_overrides:
+            internal_api_key = str(env_overrides.get("MCP_BB_INTERNAL_API_KEY", "")).strip()
+        if internal_api_key:
+            headers["x-mcp-api-key"] = internal_api_key
+            headers["Authorization"] = f"Bearer {internal_api_key}"
+
+        req = urllib.request.Request(url, headers=headers, method="GET")
         try:
             with urllib.request.urlopen(req, timeout=1.5) as response:
                 raw = response.read()
