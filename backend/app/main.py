@@ -741,6 +741,7 @@ def list_services() -> list[dict[str, Any]]:
     for service in registry.list_services():
         control = None
         if service.control is not None:
+            option_env_vars = [option.env_var for option in service.control.options]
             control = {
                 "enabled": True,
                 "host": service.control.host,
@@ -748,6 +749,7 @@ def list_services() -> list[dict[str, Any]]:
                 "health_url": service.control.health_url,
                 "startup_timeout_sec": service.control.startup_timeout_sec,
                 "options_count": len(service.control.options),
+                "option_env_vars": option_env_vars,
             }
         out.append(
             {
@@ -772,7 +774,7 @@ def list_services() -> list[dict[str, Any]]:
 @app.get("/api/services/{service_id}/status")
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
-    return process_manager.status(service)
+    return process_manager.status(service, env_overrides=_runtime_env_overrides(service))
 
 
 @app.get("/api/services/{service_id}/memory-admin/summary")

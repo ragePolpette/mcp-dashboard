@@ -202,25 +202,28 @@ def test_status_includes_health_payload(monkeypatch):
     monkeypatch.setattr(manager, "_read_pid", lambda _pid_file: None)
     monkeypatch.setattr(manager, "_pid_from_port", lambda _port: 4321)
     monkeypatch.setattr(manager, "_is_port_open", lambda _host, _port: True)
-    monkeypatch.setattr(
-        manager,
-        "_probe_health",
-        lambda _url: {
+    captured: dict[str, object] = {}
+
+    def fake_probe(_url, env_overrides=None):
+        captured["env_overrides"] = env_overrides
+        return {
             "ok": True,
             "payload": {
                 "status": "ready",
                 "write_enabled": False,
                 "ingest_enabled": False,
             },
-        },
-    )
+        }
 
-    status = manager.status(service)
+    monkeypatch.setattr(manager, "_probe_health", fake_probe)
+
+    status = manager.status(service, env_overrides={"MCP_BB_INTERNAL_API_KEY": "super-secret-key-1234"})
 
     assert status["running"] is True
     assert status["health_ok"] is True
     assert status["health_details"]["status"] == "ready"
     assert status["health_details"]["write_enabled"] is False
+    assert captured["env_overrides"] == {"MCP_BB_INTERNAL_API_KEY": "super-secret-key-1234"}
 
 
 def test_probe_health_parses_json_payload(monkeypatch):
@@ -245,6 +248,40 @@ def test_probe_health_parses_json_payload(monkeypatch):
     assert payload["ok"] is True
     assert payload["payload"]["status"] == "ready"
     assert payload["payload"]["write_enabled"] is False
+
+
+def test_probe_health_adds_auth_headers_when_internal_api_key_is_present(monkeypatch):
+    manager = ServiceProcessManager()
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        status = 200
+
+        def read(self):
+            return b'{"status":"ok"}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def fake_urlopen(req, timeout=1.5):
+        captured["headers"] = dict(req.header_items())
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("app.process_manager.urllib.request.urlopen", fake_urlopen)
+
+    payload = manager._probe_health(
+        "http://127.0.0.1:8765/health",
+        env_overrides={"MCP_BB_INTERNAL_API_KEY": "super-secret-key-1234"},
+    )
+
+    headers = {str(key).lower(): str(value) for key, value in captured["headers"].items()}
+    assert payload["ok"] is True
+    assert headers["x-mcp-api-key"] == "super-secret-key-1234"
+    assert headers["authorization"] == "Bearer super-secret-key-1234"
 
 
 def test_probe_health_treats_socket_timeout_as_unhealthy(monkeypatch):
