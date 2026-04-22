@@ -148,6 +148,18 @@ def test_db_target_runtime_contract_is_compatible_with_sql_mcp(monkeypatch):
         assert sync_payload["apply_status"] == "restart_required"
 
 
+def test_sql_mcp_service_options_expose_only_global_runtime_settings():
+    client = TestClient(app)
+
+    response = client.get("/api/services/llm-sql-db-mcp/options")
+
+    assert response.status_code == 200
+    option_ids = {item["id"] for item in response.json()["options"]}
+    assert "db_dev_main_connection_string" not in option_ids
+    assert "db_prod_main_connection_string" not in option_ids
+    assert {"anon_hash_salt", "anon_field_identification", "anon_fail_open"} <= option_ids
+
+
 def test_vault_status_includes_db_target_registry_ref_usage(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         registry, vault = _make_registry(tmp, with_vault=True)

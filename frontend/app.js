@@ -20,6 +20,7 @@ const settingsDbTargetsSummary = document.getElementById("settingsDbTargetsSumma
 const dbTargetsList = document.getElementById("dbTargetsList");
 const dbTargetEditorMeta = document.getElementById("dbTargetEditorMeta");
 const dbTargetEditorForm = document.getElementById("dbTargetEditorForm");
+const dbTargetsSyncBtn = document.getElementById("dbTargetsSyncBtn");
 const dbTargetsReloadBtn = document.getElementById("dbTargetsReloadBtn");
 const dbTargetNewBtn = document.getElementById("dbTargetNewBtn");
 const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
@@ -139,7 +140,8 @@ let dbTargetsState = {
   items: [],
   selectedId: "",
   draft: null,
-  runtimeExportPath: ""
+  runtimeExportPath: "",
+  runtime: null
 };
 let dashboardSettings = {
   preferences: {
@@ -1851,6 +1853,17 @@ function optionGroupDefinitions(serviceId) {
   ];
 }
 
+function isSqlMcpService(serviceId) {
+  return String(serviceId || "") === "llm-sql-db-mcp";
+}
+
+function createOptionsInfoBanner(message) {
+  const banner = document.createElement("div");
+  banner.className = "option-inline-banner";
+  banner.textContent = message;
+  return banner;
+}
+
 function createOptionRow(opt) {
   const row = document.createElement("div");
   row.className = "option-row";
@@ -3383,6 +3396,14 @@ function renderOptionsForm(serviceId) {
 
   optionsPanel.classList.remove("hidden");
 
+  if (isSqlMcpService(serviceId)) {
+    optionsForm.appendChild(
+      createOptionsInfoBanner(
+        "Per llm-sql-db-mcp le connessioni DB e le policy per-target si gestiscono solo in DB Targets. Qui restano solo opzioni globali del processo e dell'engine di anonimizzazione."
+      )
+    );
+  }
+
   if (!options.length) {
     const empty = document.createElement("div");
     empty.className = "option-empty muted";
@@ -3569,6 +3590,10 @@ function normalizeDbTargetRecord(raw = {}) {
       raw.connection_env_var ?? raw.connection_env ?? binding.env_var ?? buildDbTargetConnectionEnvVar(targetId)
     ),
     read_enabled: Boolean(raw.read_enabled ?? policy.read_enabled ?? raw.readAllowed ?? true),
+    write_policy: normalizeDbTargetText(
+      raw.write_policy ?? policy.write_policy ?? (raw.write_enabled ?? policy.write_enabled ?? raw.writeAllowed ? "allow" : "deny"),
+      "deny"
+    ).toLowerCase(),
     write_enabled: Boolean(
       raw.write_enabled ?? policy.effective_write_enabled ?? policy.write_enabled ?? raw.writeAllowed ?? false
     ),
@@ -3601,6 +3626,7 @@ function defaultDbTargetDraft() {
     status: "active",
     connection_vault_ref: "",
     read_enabled: true,
+    write_policy: "allow",
     write_enabled: true,
     anonymization_enabled: false,
     anonymization_mode: "off",
@@ -3636,8 +3662,12 @@ function normalizeDbTargetDraft(target) {
   if (!draft.allowed_tools.length) {
     draft.allowed_tools = ["db_target_info", "db_policy_info", "db_read", "db_write"];
   }
+  if (!["allow", "approval_required", "deny"].includes(draft.write_policy)) {
+    draft.write_policy = draft.write_enabled ? "allow" : "deny";
+  }
   if (isDbTargetProd(draft)) {
     draft.read_enabled = true;
+    draft.write_policy = "deny";
     draft.write_enabled = false;
     draft.anonymization_enabled = true;
     if (!["deterministic", "hybrid", "llm-strict"].includes(draft.anonymization_mode)) {
@@ -3649,6 +3679,7 @@ function normalizeDbTargetDraft(target) {
     draft.llm_provider = "none";
     draft.llm_model = "";
   }
+  draft.write_enabled = draft.write_policy === "allow";
   return draft;
 }
 
@@ -3674,13 +3705,24 @@ function summarizeDbTargetBinding(target) {
 function summarizeDbTargetPolicy(target) {
   return [
     target.read_enabled ? "read ON" : "read OFF",
-    target.write_enabled ? "write ON" : "write OFF",
+    `write ${target.write_policy || (target.write_enabled ? "allow" : "deny")}`,
     target.anonymization_enabled ? `anon ${target.anonymization_mode || "on"}` : "anon OFF"
   ].join(" | ");
 }
 
 function summarizeDbTargetLimits(target) {
   return `max_rows ${formatNumber(target.max_rows, 0)} | max_bytes ${formatNumber(target.max_result_bytes, 0)}`;
+}
+
+function summarizeRuntimeApplyStatus(runtime) {
+  const applyStatus = String(runtime?.apply_status || "").trim();
+  if (applyStatus === "restart_required") {
+    return "Runtime pubblicato: restart richiesto per applicarlo al servizio in esecuzione.";
+  }
+  if (applyStatus === "applied_on_next_start") {
+    return "Runtime pubblicato: verra applicato al prossimo start del servizio.";
+  }
+  return "Runtime publish status non disponibile.";
 }
 
 function getDbTargetDraft() {
@@ -3730,6 +3772,7 @@ function collectDbTargetPayload() {
   draft.max_result_bytes = Number.isFinite(Number(draft.max_result_bytes))
     ? Number(draft.max_result_bytes)
     : 131072;
+  draft.write_policy = normalizeDbTargetText(draft.write_policy, draft.write_enabled ? "allow" : "deny").toLowerCase();
   return normalizeDbTargetDraft(draft);
 }
 
@@ -3742,6 +3785,7 @@ async function loadDbTargets() {
       ? payload.targets.map(item => normalizeDbTargetRecord(item))
       : [];
     dbTargetsState.runtimeExportPath = String(payload.runtime_export_path || "");
+    dbTargetsState.runtime = payload.runtime && typeof payload.runtime === "object" ? cloneValue(payload.runtime) : null;
 
     if (dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__") {
       const selected = dbTargetsState.items.find(item => item.target_id === dbTargetsState.selectedId);
@@ -3761,9 +3805,24 @@ async function loadDbTargets() {
     dbTargetsState.error = error.message;
     dbTargetsState.items = [];
     dbTargetsState.runtimeExportPath = "";
+    dbTargetsState.runtime = null;
   } finally {
     dbTargetsState.loading = false;
     renderDbTargetsPanel();
+  }
+}
+
+async function syncDbTargetsRuntime() {
+  try {
+    const payload = await apiJson("/api/db-targets/runtime/sync", { method: "POST" });
+    dbTargetsState.runtime = payload && typeof payload === "object" ? cloneValue(payload) : dbTargetsState.runtime;
+    if (payload?.runtime_export_path) {
+      dbTargetsState.runtimeExportPath = String(payload.runtime_export_path);
+    }
+    setSettingsFlash("Runtime export DB Targets sincronizzato.", "success");
+    await loadDbTargets();
+  } catch (error) {
+    setSettingsFlash(`Errore sync runtime DB Targets: ${error.message}`, "error");
   }
 }
 
@@ -3776,9 +3835,12 @@ function renderDbTargetsPanel() {
   const exportText = dbTargetsState.runtimeExportPath
     ? ` | export runtime: ${dbTargetsState.runtimeExportPath}`
     : "";
+  const runtimeSummary = dbTargetsState.runtime
+    ? ` | ${summarizeRuntimeApplyStatus(dbTargetsState.runtime)}`
+    : "";
   settingsDbTargetsSummary.textContent = dbTargetsState.error
     ? `Errore registry: ${dbTargetsState.error}`
-    : `${count} target registrati${exportText}`;
+    : `${count} target registrati${exportText}${runtimeSummary}`;
 
   dbTargetsList.innerHTML = "";
   if (dbTargetsState.loading) {
@@ -3789,6 +3851,7 @@ function renderDbTargetsPanel() {
     for (const target of dbTargetsState.items) {
       const selected = dbTargetsState.selectedId === target.target_id;
       const binding = summarizeDbTargetBinding(target);
+      const runtimeStatus = normalizeDbTargetText(target?.raw?.state?.runtime_status ?? target?.state?.runtime_status ?? "");
       const row = document.createElement("button");
       row.type = "button";
       row.className = `db-target-card ${selected ? "active-card" : ""}`;
@@ -3801,6 +3864,7 @@ function renderDbTargetsPanel() {
           <div class="db-target-badge-row">
             <span class="db-target-badge ${isDbTargetProd(target) ? "env-prod" : "env-nonprod"}">${escapeHtml(target.environment)}</span>
             <span class="db-target-badge ${target.status === "active" ? "status-active" : "status-disabled"}">${escapeHtml(target.status)}</span>
+            ${runtimeStatus ? `<span class="db-target-badge status-runtime">${escapeHtml(runtimeStatus)}</span>` : ""}
           </div>
         </div>
         <div class="db-target-card-meta">${escapeHtml(summarizeDbTargetPolicy(target))}</div>
@@ -3816,9 +3880,10 @@ function renderDbTargetsPanel() {
   const selected = dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__";
   const binding = summarizeDbTargetBinding(draft);
   const prod = isDbTargetProd(draft);
+  const runtimeStatus = normalizeDbTargetText(draft?.raw?.state?.runtime_status ?? draft?.state?.runtime_status ?? "");
   dbTargetEditorMeta.textContent = selected
-    ? `${draft.target_id} | ${binding.statusMessage}`
-    : "Nuovo target DB. I target prod applicano hard fences non aggirabili lato backend/MCP.";
+    ? `${draft.target_id} | ${runtimeStatus || "runtime status n/d"} | ${binding.statusMessage}`
+    : "Nuovo target DB. DB Targets e la source of truth per connessioni e policy per-target; i target prod applicano hard fences non aggirabili lato backend/MCP.";
 
   dbTargetEditorForm.innerHTML = `
     <div class="db-target-editor-section">
@@ -3863,10 +3928,15 @@ function renderDbTargetsPanel() {
       <h4>Policy</h4>
       <div class="db-target-field-grid">
         <label class="settings-toggle"><input data-db-target-field="read_enabled" type="checkbox" ${draft.read_enabled ? "checked" : ""}>Read enabled</label>
-        <label class="settings-toggle"><input data-db-target-field="write_enabled" type="checkbox" ${draft.write_enabled ? "checked" : ""} ${prod ? "disabled" : ""}>Write enabled</label>
         <label class="settings-toggle"><input data-db-target-field="anonymization_enabled" type="checkbox" ${draft.anonymization_enabled ? "checked" : ""} ${prod ? "disabled" : ""}>Anonymization enabled</label>
       </div>
       <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetWritePolicyInput">Write Policy</label>
+          <select id="dbTargetWritePolicyInput" data-db-target-field="write_policy" ${prod ? "disabled" : ""}>
+            ${["allow", "approval_required", "deny"].map(value => `<option value="${value}" ${draft.write_policy === value ? "selected" : ""}>${value}</option>`).join("")}
+          </select>
+        </div>
         <div class="db-target-field">
           <label for="dbTargetAnonModeInput">Anonymization Mode</label>
           <select id="dbTargetAnonModeInput" data-db-target-field="anonymization_mode" ${prod ? "disabled" : ""}>
@@ -3934,6 +4004,10 @@ function handleDbTargetDraftChange(event) {
 
   if (field === "target_id" && !draft.connection_env_var) {
     draft.connection_env_var = buildDbTargetConnectionEnvVar(event.target.value);
+  }
+
+  if (field === "write_policy") {
+    draft.write_enabled = String(event.target.value || "").trim().toLowerCase() === "allow";
   }
 
   setDbTargetDraft(draft);
@@ -4677,6 +4751,7 @@ settingsServicesTabBtn.addEventListener("click", () => setSettingsTab("services"
 settingsDbTargetsTabBtn.addEventListener("click", () => setSettingsTab("db-targets"));
 settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
 settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
+dbTargetsSyncBtn?.addEventListener("click", () => syncDbTargetsRuntime());
 dbTargetsReloadBtn?.addEventListener("click", () => loadDbTargets());
 dbTargetNewBtn?.addEventListener("click", startNewDbTarget);
 saveSettingsBtn.addEventListener("click", saveDashboardSettings);
