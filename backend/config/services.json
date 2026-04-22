@@ -457,26 +457,6 @@
         },
         "options": [
           {
-            "id": "db_dev_main_connection_string",
-            "label": "DEV Main Connection String",
-            "type": "string",
-            "env_var": "DB_DEV_MAIN_CONNECTION_STRING",
-            "description": "Connection string SQL Server per il target dev-main.",
-            "secret": true,
-            "required": false,
-            "default": ""
-          },
-          {
-            "id": "db_prod_main_connection_string",
-            "label": "PROD Main Connection String",
-            "type": "string",
-            "env_var": "DB_PROD_MAIN_CONNECTION_STRING",
-            "description": "Connection string SQL Server per il target prod-main.",
-            "secret": true,
-            "required": false,
-            "default": ""
-          },
-          {
             "id": "anon_hash_salt",
             "label": "ANON HASH SALT",
             "type": "string",
