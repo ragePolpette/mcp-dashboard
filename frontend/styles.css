@@ -619,6 +619,12 @@ button:disabled {
   background: rgba(18, 35, 53, 0.55);
 }
 
+.db-target-badge.status-runtime {
+  color: #d5e2ef;
+  border-color: #3d74ab;
+  background: rgba(24, 52, 82, 0.55);
+}
+
 .db-target-editor-form {
   margin-top: 10px;
   display: grid;
@@ -892,6 +898,16 @@ button:disabled {
   border-radius: 12px;
   padding: 10px;
   background: rgba(10, 20, 34, 0.35);
+}
+
+.option-inline-banner {
+  border: 1px solid #3d74ab;
+  border-radius: 10px;
+  background: rgba(24, 52, 82, 0.34);
+  color: #d8e4ef;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  line-height: 1.45;
 }
 
 .options-header {
