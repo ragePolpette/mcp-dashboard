@@ -774,7 +774,12 @@ def list_services() -> list[dict[str, Any]]:
 @app.get("/api/services/{service_id}/status")
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
-    return process_manager.status(service, env_overrides=_runtime_env_overrides(service))
+    try:
+        return process_manager.status(service, env_overrides=_runtime_env_overrides(service))
+    except ValueError as exc:
+        status = process_manager.status(service)
+        status["last_error"] = str(exc)
+        return status
 
 
 @app.get("/api/services/{service_id}/memory-admin/summary")
