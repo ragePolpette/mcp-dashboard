@@ -599,6 +599,26 @@
             "default": ""
           },
           {
+            "id": "bb_workspace",
+            "label": "Bitbucket Workspace",
+            "type": "string",
+            "env_var": "BITBUCKET_WORKSPACE",
+            "description": "Workspace Bitbucket Cloud da usare per il repository target.",
+            "secret": false,
+            "required": true,
+            "default": "studioboost"
+          },
+          {
+            "id": "bb_repo_slug",
+            "label": "Bitbucket Repository Slug",
+            "type": "string",
+            "env_var": "BITBUCKET_REPO_SLUG",
+            "description": "Repository slug Bitbucket Cloud da usare per il servizio.",
+            "secret": false,
+            "required": true,
+            "default": "bpopilot"
+          },
+          {
             "id": "bb_internal_api_key",
             "label": "MCP Internal API Key",
             "type": "string",
