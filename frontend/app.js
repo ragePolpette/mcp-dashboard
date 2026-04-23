@@ -3318,6 +3318,11 @@ function renderCards() {
     lineTwo.textContent = `Health: ${healthLabel(runtime)} | Opzioni: ${optsCount}`;
     meta.appendChild(lineOne);
     meta.appendChild(lineTwo);
+    if (runtime.last_error) {
+      const lineThree = document.createElement("div");
+      lineThree.textContent = `Errore: ${runtime.last_error}`;
+      meta.appendChild(lineThree);
+    }
 
     const metrics = getServiceMetrics(service.id);
     const kpi = document.createElement("div");
@@ -4212,15 +4217,38 @@ async function refreshAll(tail = currentRecentRowsLimit()) {
   renderCards();
 }
 
+function controlActionLabel(action) {
+  if (action === "start") return "avvio";
+  if (action === "stop") return "stop";
+  if (action === "restart") return "restart";
+  return action;
+}
+
 async function controlAction(serviceId, action) {
   const state = getServiceState(serviceId);
+  const service = services.find(item => item.id === serviceId);
+  const serviceName = service?.name || serviceId;
+  const actionLabel = controlActionLabel(action);
   state.actionBusy = true;
   state.pendingAction = action;
   renderCards();
   try {
-    await apiJson(`/api/services/${serviceId}/${action}`, { method: "POST" });
+    const payload = await apiJson(`/api/services/${serviceId}/${action}`, { method: "POST" });
+    if (payload && payload.ok === false) {
+      const detail =
+        payload?.status?.last_error ||
+        payload?.start?.status?.last_error ||
+        payload?.result ||
+        `Operazione ${actionLabel} non confermata.`;
+      throw new Error(detail);
+    }
+    clearSettingsFlash();
   } catch (error) {
     console.error(`Control action failed (${serviceId}:${action})`, error);
+    const runtime = getRuntimeStatus(serviceId);
+    runtime.last_error = error.message;
+    statusByService.set(serviceId, runtime);
+    setSettingsFlash(`Errore ${actionLabel} ${serviceName}: ${error.message}`, "error");
   } finally {
     state.actionBusy = false;
     state.pendingAction = "";
