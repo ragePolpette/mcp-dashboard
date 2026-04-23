@@ -619,16 +619,6 @@
             "default": "bpopilot"
           },
           {
-            "id": "bb_internal_api_key",
-            "label": "MCP Internal API Key",
-            "type": "string",
-            "env_var": "MCP_BB_INTERNAL_API_KEY",
-            "description": "Chiave opzionale per proteggere /health e /mcp. Consigliato salvarla nel vault locale.",
-            "secret": true,
-            "required": false,
-            "default": ""
-          },
-          {
             "id": "bb_default_destination_branch",
             "label": "Default Destination Branch",
             "type": "string",
