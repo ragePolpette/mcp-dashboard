@@ -3931,20 +3931,6 @@ function renderDbTargetsPanel() {
       </div>
     </div>
     <div class="db-target-editor-section">
-      <h4>Connessione</h4>
-      <div class="db-target-field-grid">
-        <div class="db-target-field">
-          <label for="dbTargetVaultRefInput">Local Vault Ref</label>
-          <input id="dbTargetVaultRefInput" data-db-target-field="connection_vault_ref" type="text" value="${escapeHtml(draft.connection_vault_ref)}" placeholder="vault://db.prod.connection">
-          <div class="db-target-inline-hint">${escapeHtml(binding.statusMessage)}</div>
-        </div>
-        <div class="db-target-field">
-          <label for="dbTargetEnvVarInput">Runtime Env Var</label>
-          <input id="dbTargetEnvVarInput" data-db-target-field="connection_env_var" type="text" value="${escapeHtml(draft.connection_env_var)}">
-        </div>
-      </div>
-    </div>
-    <div class="db-target-editor-section">
       <h4>Policy</h4>
       <div class="db-target-field-grid">
         <label class="settings-toggle"><input data-db-target-field="read_enabled" type="checkbox" ${draft.read_enabled ? "checked" : ""}>Read enabled</label>
@@ -3990,6 +3976,21 @@ function renderDbTargetsPanel() {
         <div class="db-target-field">
           <label for="dbTargetAllowedToolsInput">Allowed Tools</label>
           <input id="dbTargetAllowedToolsInput" data-db-target-field="allowed_tools" type="text" value="${escapeHtml(draft.allowed_tools.join(", "))}">
+        </div>
+      </div>
+    </div>
+    <div class="db-target-editor-section">
+      <h4>Avanzate</h4>
+      <div class="db-target-inline-hint">Connessione runtime del target: Local Vault Ref e variabile ambiente usata dal processo MCP.</div>
+      <div class="db-target-field-grid">
+        <div class="db-target-field">
+          <label for="dbTargetVaultRefInput">Local Vault Ref</label>
+          <input id="dbTargetVaultRefInput" data-db-target-field="connection_vault_ref" type="text" value="${escapeHtml(draft.connection_vault_ref)}" placeholder="vault://db.prod.connection">
+          <div class="db-target-inline-hint">${escapeHtml(binding.statusMessage)}</div>
+        </div>
+        <div class="db-target-field">
+          <label for="dbTargetEnvVarInput">Runtime Env Var</label>
+          <input id="dbTargetEnvVarInput" data-db-target-field="connection_env_var" type="text" value="${escapeHtml(draft.connection_env_var)}">
         </div>
       </div>
     </div>
