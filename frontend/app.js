@@ -1898,6 +1898,7 @@ function createOptionRow(opt) {
   if (opt.secret) {
     row.dataset.secretOption = "true";
     row.dataset.secretOptionId = opt.id;
+    row.dataset.secretDirty = "false";
 
     const sourceSelect = document.createElement("select");
     sourceSelect.dataset.optionSource = opt.id;
@@ -1941,7 +1942,16 @@ function createOptionRow(opt) {
       sessionInput.classList.toggle("hidden", useVault);
       vaultSelect.classList.toggle("hidden", !useVault);
     };
-    sourceSelect.addEventListener("change", updateSecretMode);
+    sourceSelect.addEventListener("change", () => {
+      row.dataset.secretDirty = "true";
+      updateSecretMode();
+    });
+    sessionInput.addEventListener("input", () => {
+      row.dataset.secretDirty = "true";
+    });
+    vaultSelect.addEventListener("change", () => {
+      row.dataset.secretDirty = "true";
+    });
     updateSecretMode();
 
     const sourceHint = document.createElement("div");
@@ -3444,17 +3454,22 @@ function collectOptionsFromForm() {
     if (!optionId) {
       continue;
     }
+    const secretDirty = row.dataset.secretDirty === "true";
     const source = row.querySelector(`[data-option-source="${optionId}"]`)?.value || "session";
     if (source === "vault") {
       const ref = row.querySelector(`[data-option-vault-ref="${optionId}"]`)?.value || "";
       if (String(ref).trim()) {
         values[optionId] = { source: "vault", ref };
+      } else if (secretDirty) {
+        values[optionId] = { source: "clear" };
       }
       continue;
     }
     const value = row.querySelector(`[data-option-session-value="${optionId}"]`)?.value ?? "";
     if (String(value).trim()) {
       values[optionId] = { source: "session", value };
+    } else if (secretDirty) {
+      values[optionId] = { source: "clear" };
     }
   }
 
