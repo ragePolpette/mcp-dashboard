@@ -104,3 +104,30 @@ The project is usable today as a local operations dashboard for MCP services and
 - `llm_context`
 - `llm-bitbucket-mcp`
 - `llm-sql-db-mcp`
+
+
+## Connessioni SQL dalla dashboard
+
+In LLM SQL DB MCP > Avanzate > DB Targets puoi creare piu target DEV, QA o PROD. I nuovi
+target partono disabilitati e senza scrittura. Salva prima il target, quindi
+inizializza/sblocca il Vault e compila Connessione SQL Server: server (o istanza),
+porta facoltativa, database, utente SQL e password. Per un SQL Server sul PC
+Windows dal container usa `host.docker.internal`.
+
+Il modulo supporta autenticazione SQL; TLS e attivo e la verifica del certificato
+resta abilitata per impostazione predefinita. La password viene cifrata nel Vault
+con un riferimento dedicato al target; non viene restituita dal nuovo endpoint.
+In modifica, una password vuota conserva quella salvata. Una connessione con
+opzioni avanzate non rappresentabili nel modulo rimane modificabile dal Vault,
+senza riscriverla automaticamente. I riferimenti manuali restano in Avanzate.
+
+Dopo aver salvato connessione, stato e policy, premi **Applica al server SQL**:
+valida i riferimenti attivi e riavvia soltanto `llm-sql-db-mcp`. Per PROD serve
+anche il salt di anonimizzazione nelle opzioni del servizio. Le sessioni MCP in
+corso vengono interrotte dal riavvio. Il salvataggio e lo stato healthy non
+certificano la connettivita al database; non viene eseguita una query di prova.
+
+Bloccare il Vault non rimuove le credenziali dai processi gia avviati: arresta il
+servizio SQL per rimuoverle dalla sua memoria. Il Vault deve essere sbloccato per
+applicare target attivi. Le verifiche automatiche usano soltanto dati sintetici:
+`python -m pytest -q`.

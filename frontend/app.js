@@ -8,15 +8,15 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const settingsFlash = document.getElementById("settingsFlash");
 const settingsServicesTabBtn = document.getElementById("settingsServicesTabBtn");
-const settingsDbTargetsTabBtn = document.getElementById("settingsDbTargetsTabBtn");
+const tabDbTargetsBtn = document.getElementById("tabDbTargetsBtn");
 const settingsDashboardTabBtn = document.getElementById("settingsDashboardTabBtn");
 const settingsVaultTabBtn = document.getElementById("settingsVaultTabBtn");
 const settingsServicesView = document.getElementById("settingsServicesView");
-const settingsDbTargetsView = document.getElementById("settingsDbTargetsView");
+const advancedDbTargetsView = document.getElementById("advancedDbTargetsView");
 const settingsDashboardView = document.getElementById("settingsDashboardView");
 const settingsVaultView = document.getElementById("settingsVaultView");
 const settingsServicesList = document.getElementById("settingsServicesList");
-const settingsDbTargetsSummary = document.getElementById("settingsDbTargetsSummary");
+const dbTargetsSummary = document.getElementById("dbTargetsSummary");
 const dbTargetsList = document.getElementById("dbTargetsList");
 const dbTargetEditorMeta = document.getElementById("dbTargetEditorMeta");
 const dbTargetEditorForm = document.getElementById("dbTargetEditorForm");
@@ -780,9 +780,15 @@ function createSummaryCard(label, value) {
 }
 
 function setAdvancedTab(tabName) {
+  if (tabName === "db-targets" && advancedServiceId !== "llm-sql-db-mcp") tabName = "options";
+  if (tabName !== "db-targets") {
+    const password = document.getElementById("sqlPassword");
+    if (password) password.value = "";
+  }
   advancedActiveTab = tabName;
   const tabs = [
     { name: "options", button: tabOptionsBtn, view: advancedOptionsView, enabled: true },
+    { name: "db-targets", button: tabDbTargetsBtn, view: advancedDbTargetsView, enabled: advancedServiceId === "llm-sql-db-mcp" },
     { name: "logs", button: tabLogsBtn, view: advancedLogsView, enabled: true },
     {
       name: "inspector",
@@ -2716,23 +2722,19 @@ function renderSettingsFlash() {
 }
 
 function setSettingsTab(tabId) {
-  settingsActiveTab = ["services", "db-targets", "dashboard", "vault"].includes(tabId) ? tabId : "services";
+  settingsActiveTab = ["services", "dashboard", "vault"].includes(tabId) ? tabId : "services";
   const isServices = settingsActiveTab === "services";
-  const isDbTargets = settingsActiveTab === "db-targets";
   const isDashboard = settingsActiveTab === "dashboard";
   const isVault = settingsActiveTab === "vault";
 
   settingsServicesTabBtn.classList.toggle("active", isServices);
   settingsServicesTabBtn.setAttribute("aria-selected", String(isServices));
-  settingsDbTargetsTabBtn.classList.toggle("active", isDbTargets);
-  settingsDbTargetsTabBtn.setAttribute("aria-selected", String(isDbTargets));
   settingsDashboardTabBtn.classList.toggle("active", isDashboard);
   settingsDashboardTabBtn.setAttribute("aria-selected", String(isDashboard));
   settingsVaultTabBtn.classList.toggle("active", isVault);
   settingsVaultTabBtn.setAttribute("aria-selected", String(isVault));
 
   settingsServicesView.classList.toggle("hidden", !isServices);
-  settingsDbTargetsView.classList.toggle("hidden", !isDbTargets);
   settingsDashboardView.classList.toggle("hidden", !isDashboard);
   settingsVaultView.classList.toggle("hidden", !isVault);
 }
@@ -3217,6 +3219,8 @@ async function toggleSettingsPanel(forceOpen = null) {
     }
     renderSettingsPanel();
   } else {
+    const password = document.getElementById("sqlPassword");
+    if (password) password.value = "";
     clearSettingsFlash();
   }
 }
@@ -3643,11 +3647,11 @@ function defaultDbTargetDraft() {
     display_name: "",
     environment: "dev",
     db_kind: "sqlserver",
-    status: "active",
+    status: "disabled",
     connection_vault_ref: "",
     read_enabled: true,
-    write_policy: "allow",
-    write_enabled: true,
+    write_policy: "deny",
+    write_enabled: false,
     anonymization_enabled: false,
     anonymization_mode: "off",
     llm_provider: "none",
@@ -3839,15 +3843,15 @@ async function syncDbTargetsRuntime() {
     if (payload?.runtime_export_path) {
       dbTargetsState.runtimeExportPath = String(payload.runtime_export_path);
     }
-    setSettingsFlash("Runtime export DB Targets sincronizzato.", "success");
+    setDbTargetsFlash("Runtime export DB Targets sincronizzato.", "success");
     await loadDbTargets();
   } catch (error) {
-    setSettingsFlash(`Errore sync runtime DB Targets: ${error.message}`, "error");
+    setDbTargetsFlash(`Errore sync runtime DB Targets: ${error.message}`, "error");
   }
 }
 
 function renderDbTargetsPanel() {
-  if (!settingsDbTargetsSummary || !dbTargetsList || !dbTargetEditorForm || !dbTargetEditorMeta) {
+  if (!dbTargetsSummary || !dbTargetsList || !dbTargetEditorForm || !dbTargetEditorMeta) {
     return;
   }
 
@@ -3858,7 +3862,7 @@ function renderDbTargetsPanel() {
   const runtimeSummary = dbTargetsState.runtime
     ? ` | ${summarizeRuntimeApplyStatus(dbTargetsState.runtime)}`
     : "";
-  settingsDbTargetsSummary.textContent = dbTargetsState.error
+  dbTargetsSummary.textContent = dbTargetsState.error
     ? `Errore registry: ${dbTargetsState.error}`
     : `${count} target registrati${exportText}${runtimeSummary}`;
 
@@ -4008,6 +4012,7 @@ function renderDbTargetsPanel() {
   dbTargetEditorForm.addEventListener("submit", saveDbTargetFromEditor);
   dbTargetEditorForm.querySelector("#dbTargetDisableBtn")?.addEventListener("click", disableSelectedDbTarget);
   dbTargetEditorForm.querySelector("#dbTargetEnableBtn")?.addEventListener("click", enableSelectedDbTarget);
+  if (typeof renderSqlConnectionPanel === "function") renderSqlConnectionPanel();
 }
 
 function handleDbTargetDraftChange(event) {
@@ -4023,7 +4028,7 @@ function handleDbTargetDraftChange(event) {
     draft[field] = event.target.value;
   }
 
-  if (field === "target_id" && !draft.connection_env_var) {
+  if (field === "target_id" && (!draft.connection_env_var || draft.connection_env_var === buildDbTargetConnectionEnvVar(getDbTargetDraft().target_id))) {
     draft.connection_env_var = buildDbTargetConnectionEnvVar(event.target.value);
   }
 
@@ -4032,7 +4037,14 @@ function handleDbTargetDraftChange(event) {
   }
 
   setDbTargetDraft(draft);
+  // Preserve focus and selection when policy changes require rebuilding fields.
+  const inputId = event.target.id;
+  const selection = typeof event.target.selectionStart === "number"
+    ? [event.target.selectionStart, event.target.selectionEnd] : null;
   renderDbTargetsPanel();
+  const replacement = document.getElementById(inputId);
+  replacement?.focus();
+  if (replacement && selection) replacement.setSelectionRange(...selection);
 }
 
 async function saveDbTargetFromEditor(event) {
@@ -4055,13 +4067,13 @@ async function saveDbTargetFromEditor(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ values: payload })
     });
-    setSettingsFlash(`Target ${payload.target_id} salvato.`, "success");
+    setDbTargetsFlash(`Target ${payload.target_id} salvato.`, "success");
     if (response?.target) {
       setDbTargetDraft(response.target, response.target.target_id);
     }
     await loadDbTargets();
   } catch (error) {
-    setSettingsFlash(`Errore salvataggio target: ${error.message}`, "error");
+    setDbTargetsFlash(`Errore salvataggio target: ${error.message}`, "error");
   }
 }
 
@@ -4071,10 +4083,10 @@ async function disableSelectedDbTarget() {
   }
   try {
     await apiJson(`/api/db-targets/${encodeURIComponent(dbTargetsState.selectedId)}/disable`, { method: "POST" });
-    setSettingsFlash(`Target ${dbTargetsState.selectedId} disabilitato.`, "success");
+    setDbTargetsFlash(`Target ${dbTargetsState.selectedId} disabilitato.`, "success");
     await loadDbTargets();
   } catch (error) {
-    setSettingsFlash(`Errore disabilitazione target: ${error.message}`, "error");
+    setDbTargetsFlash(`Errore disabilitazione target: ${error.message}`, "error");
   }
 }
 
@@ -4084,10 +4096,10 @@ async function enableSelectedDbTarget() {
   }
   try {
     await apiJson(`/api/db-targets/${encodeURIComponent(dbTargetsState.selectedId)}/enable`, { method: "POST" });
-    setSettingsFlash(`Target ${dbTargetsState.selectedId} riattivato.`, "success");
+    setDbTargetsFlash(`Target ${dbTargetsState.selectedId} riattivato.`, "success");
     await loadDbTargets();
   } catch (error) {
-    setSettingsFlash(`Errore riattivazione target: ${error.message}`, "error");
+    setDbTargetsFlash(`Errore riattivazione target: ${error.message}`, "error");
   }
 }
 
@@ -4568,6 +4580,7 @@ async function openAdvanced(serviceId) {
     loadMemoryAdminAll(serviceId)
   ]);
 
+  if (serviceId === "llm-sql-db-mcp") await loadDbTargets();
   advancedTitle.textContent = `Dettaglio: ${service.name}`;
   renderAdvancedMeta(service);
   renderAdvancedInspectorTitles(service);
@@ -4575,7 +4588,8 @@ async function openAdvanced(serviceId) {
   syncMemoryAdminInputsFromState(serviceId);
   renderMemoryAdminForAdvanced(serviceId);
   advancedPanel.classList.remove("hidden");
-  setAdvancedTab(pickDefaultAdvancedTab(service, getRuntimeStatus(serviceId)));
+  setAdvancedTab(serviceId === "llm-sql-db-mcp" ? "db-targets" : pickDefaultAdvancedTab(service, getRuntimeStatus(serviceId)));
+  if (serviceId === "llm-sql-db-mcp") renderSqlConnectionPanel(true);
 
   filterLevel.value = advancedFilters.level || "";
   filterChannel.value = advancedFilters.channel || "";
@@ -4792,7 +4806,11 @@ killAllBtn.addEventListener("click", killEmAll);
 settingsFab.addEventListener("click", () => toggleSettingsPanel());
 closeSettingsBtn.addEventListener("click", () => toggleSettingsPanel(false));
 settingsServicesTabBtn.addEventListener("click", () => setSettingsTab("services"));
-settingsDbTargetsTabBtn.addEventListener("click", () => setSettingsTab("db-targets"));
+tabDbTargetsBtn.addEventListener("click", async () => {
+  setAdvancedTab("db-targets");
+  await loadDbTargets();
+  renderSqlConnectionPanel(true);
+});
 settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
 settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
 dbTargetsSyncBtn?.addEventListener("click", () => syncDbTargetsRuntime());

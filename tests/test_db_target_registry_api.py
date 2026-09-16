@@ -35,6 +35,7 @@ def _make_registry(tmp: str, *, with_vault: bool = False):
 def test_db_targets_api_supports_create_update_and_disable(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         registry, _vault = _make_registry(tmp)
+        monkeypatch.setattr("app.main.process_manager.status", lambda service: {"running": False})
         monkeypatch.setattr("app.main.db_target_registry", registry)
 
         client = TestClient(app)
