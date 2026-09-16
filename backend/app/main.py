@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -26,6 +26,7 @@ from .process_manager import ServiceProcessManager
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 from .service_options import ServiceOptionsManager
 from .services_registry import ServiceRegistry
+from .sql_connections import read_connection_profile, save_connection_profile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "backend" / "config"
@@ -680,6 +681,51 @@ def db_targets_runtime_sync() -> dict[str, Any]:
         **_db_runtime_contract_payload(),
     }
 
+
+
+@app.get("/api/db-targets/{target_id}/connection")
+def db_target_connection_profile(target_id: str) -> dict[str, Any]:
+    target = _db_target_or_404(target_id)
+    try:
+        return read_connection_profile(target, vault_manager)
+    except (ValueError, LocalSecretVaultError):
+        raise HTTPException(status_code=400, detail="Connessione non disponibile: sblocca il Vault. Le connessioni avanzate restano modificabili nel Vault.") from None
+
+
+@app.put("/api/db-targets/{target_id}/connection")
+async def db_target_connection_save(target_id: str, request: Request) -> dict[str, Any]:
+    target = _db_target_or_404(target_id)
+    try:
+        payload = await request.json()
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(status_code=400, detail="Configurazione della connessione non valida.")
+    try:
+        return save_connection_profile(target, payload, vault_manager, db_target_registry)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except LocalSecretVaultError:
+        raise HTTPException(status_code=400, detail="Impossibile salvare la connessione: verifica che il Vault sia sbloccato.") from None
+
+
+@app.post("/api/db-targets/runtime/apply")
+def db_targets_runtime_apply() -> dict[str, Any]:
+    service = _service_or_404("llm-sql-db-mcp")
+    try:
+        env = _runtime_env_overrides(service)
+        missing = options_manager.missing_required_options(service, env_overrides=env)
+        active = [target for target in db_target_registry.list_targets() if target["status"] == "active"]
+        missing += [target["target_id"] for target in active if not env.get(target["connection"]["env_var"])]
+        if missing:
+            raise ValueError("Configura e sblocca le credenziali richieste prima di applicare: " + ", ".join(missing))
+        if any(target["environment"] == "prod" for target in active) and not env.get("ANON_HASH_SALT"):
+            raise ValueError("Configura il salt di anonimizzazione nelle opzioni SQL prima di abilitare PROD.")
+        db_target_registry.sync_runtime()
+        result = process_manager.restart(service, env_overrides=env)
+        if not result.get("ok") or not (result.get("status") or {}).get("health_ok"):
+            raise HTTPException(status_code=503, detail="Il server SQL non è pronto. Controlla i log del servizio nella dashboard.")
+        return {"ok": True, "message": "Configurazione applicata al server SQL.", "status": result.get("status")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 @app.get("/api/db-targets/{target_id}")
 def get_db_target(target_id: str) -> dict[str, Any]:

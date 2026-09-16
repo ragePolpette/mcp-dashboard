@@ -31,9 +31,37 @@
 
       <div class="advanced-tabs" role="tablist" aria-label="Sezioni dettaglio servizio">
         <button id="tabOptionsBtn" class="advanced-tab active" type="button" role="tab" aria-selected="true">Opzioni</button>
+        <button id="tabDbTargetsBtn" class="advanced-tab hidden" type="button" role="tab" aria-selected="false">DB Targets</button>
         <button id="tabLogsBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Log</button>
         <button id="tabInspectorBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Inspector</button>
         <button id="tabMemoryBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Memory</button>
+      </div>
+
+      <div id="advancedDbTargetsView" class="advanced-view hidden">
+        <section class="settings-section">
+          <div class="db-targets-header">
+            <div>
+              <h3>DB Targets</h3>
+              <p id="dbTargetsSummary" class="muted">Registry target DB non caricato.</p>
+              <p class="muted">Source of truth per connessioni, policy per-target, vault ref e runtime export di <code>llm-sql-db-mcp</code>.</p>
+            </div>
+            <div class="db-targets-actions">
+              <button id="dbTargetsApplyBtn" type="button" class="btn-ok" title="Applica le modifiche riavviando solo il server SQL">Applica al server SQL</button>
+              <button id="dbTargetsSyncBtn" type="button">Sync Runtime</button>
+              <button id="dbTargetsReloadBtn" type="button">Ricarica</button>
+              <button id="dbTargetNewBtn" type="button" class="btn-ok">Nuovo Target</button>
+            </div>
+          </div>
+          <p id="dbTargetsFlash" class="settings-flash hidden" role="status" aria-live="polite"></p>
+          <div class="db-targets-layout">
+            <aside id="dbTargetsList" class="db-targets-list"></aside>
+            <section class="db-target-editor">
+              <div id="dbTargetEditorMeta" class="db-target-editor-meta muted">Seleziona un target o creane uno nuovo.</div>
+              <form id="dbTargetEditorForm" class="db-target-editor-form"></form>
+              <section id="dbConnectionPanel" class="db-target-editor-section"></section>
+            </section>
+          </div>
+        </section>
       </div>
 
       <section id="advancedOptionsView" class="advanced-view">
@@ -432,7 +460,6 @@
 
       <div class="settings-tabs" role="tablist" aria-label="Sezioni impostazioni dashboard">
         <button id="settingsServicesTabBtn" class="settings-tab active" type="button" role="tab" aria-selected="true">Servizi</button>
-        <button id="settingsDbTargetsTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">DB Targets</button>
         <button id="settingsDashboardTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Dashboard</button>
         <button id="settingsVaultTabBtn" class="settings-tab" type="button" role="tab" aria-selected="false">Vault</button>
       </div>
@@ -451,30 +478,6 @@
         </section>
       </div>
 
-      <div id="settingsDbTargetsView" class="settings-view hidden">
-        <section class="settings-section">
-          <div class="db-targets-header">
-            <div>
-              <h3>DB Targets</h3>
-              <p id="settingsDbTargetsSummary" class="muted">Registry target DB non caricato.</p>
-              <p class="muted">Source of truth per connessioni, policy per-target, vault ref e runtime export di <code>llm-sql-db-mcp</code>.</p>
-            </div>
-            <div class="db-targets-actions">
-              <button id="dbTargetsSyncBtn" type="button">Sync Runtime</button>
-              <button id="dbTargetsReloadBtn" type="button">Ricarica</button>
-              <button id="dbTargetNewBtn" type="button" class="btn-ok">Nuovo Target</button>
-            </div>
-          </div>
-          <div class="db-targets-layout">
-            <aside id="dbTargetsList" class="db-targets-list"></aside>
-            <section class="db-target-editor">
-              <div id="dbTargetEditorMeta" class="db-target-editor-meta muted">Seleziona un target o creane uno nuovo.</div>
-              <form id="dbTargetEditorForm" class="db-target-editor-form"></form>
-            </section>
-          </div>
-        </section>
-      </div>
-
       <div id="settingsVaultView" class="settings-view hidden">
         <section class="settings-section settings-section-vault">
           <h3>Vault locale</h3>
@@ -488,7 +491,8 @@
     </section>
   </main>
 
-  <script src="/assets/app.js?v=20260327a"></script>
+  <script src="/assets/app.js?v=20260916-sql-advanced"></script>
+  <script src="/assets/sql-connections.js"></script>
 </body>
 </html>
 
