@@ -3670,7 +3670,7 @@ function isDbTargetHardFencedField(fieldId, target) {
   if (!isDbTargetProd(target)) {
     return false;
   }
-  return ["write_enabled", "anonymization_enabled", "anonymization_mode"].includes(fieldId);
+  return ["write_enabled"].includes(fieldId);
 }
 
 function normalizeDbTargetDraft(target) {
@@ -3693,10 +3693,6 @@ function normalizeDbTargetDraft(target) {
     draft.read_enabled = true;
     draft.write_policy = "deny";
     draft.write_enabled = false;
-    draft.anonymization_enabled = true;
-    if (!["deterministic", "hybrid", "llm-strict"].includes(draft.anonymization_mode)) {
-      draft.anonymization_mode = "hybrid";
-    }
   }
   if (!draft.anonymization_enabled) {
     draft.anonymization_mode = "off";
@@ -3907,7 +3903,7 @@ function renderDbTargetsPanel() {
   const runtimeStatus = normalizeDbTargetText(draft?.raw?.state?.runtime_status ?? draft?.state?.runtime_status ?? "");
   dbTargetEditorMeta.textContent = selected
     ? `${draft.target_id} | ${runtimeStatus || "runtime status n/d"} | ${binding.statusMessage}`
-    : "Nuovo target DB. DB Targets e la source of truth per connessioni e policy per-target; i target prod applicano hard fences non aggirabili lato backend/MCP.";
+    : "Nuovo target DB. DB Targets e la source of truth per connessioni e policy per-target; i target prod mantengono la scrittura disabilitata.";
 
   dbTargetEditorForm.innerHTML = `
     <div class="db-target-editor-section">
@@ -3938,7 +3934,7 @@ function renderDbTargetsPanel() {
       <h4>Policy</h4>
       <div class="db-target-field-grid">
         <label class="settings-toggle"><input data-db-target-field="read_enabled" type="checkbox" ${draft.read_enabled ? "checked" : ""}>Read enabled</label>
-        <label class="settings-toggle"><input data-db-target-field="anonymization_enabled" type="checkbox" ${draft.anonymization_enabled ? "checked" : ""} ${prod ? "disabled" : ""}>Anonymization enabled</label>
+        <label class="settings-toggle"><input data-db-target-field="anonymization_enabled" type="checkbox" ${draft.anonymization_enabled ? "checked" : ""}>Anonymization enabled</label>
       </div>
       <div class="db-target-field-grid">
         <div class="db-target-field">
@@ -3949,7 +3945,7 @@ function renderDbTargetsPanel() {
         </div>
         <div class="db-target-field">
           <label for="dbTargetAnonModeInput">Anonymization Mode</label>
-          <select id="dbTargetAnonModeInput" data-db-target-field="anonymization_mode" ${prod ? "disabled" : ""}>
+          <select id="dbTargetAnonModeInput" data-db-target-field="anonymization_mode">
             ${["off", "deterministic", "hybrid", "llm-strict"].map(value => `<option value="${value}" ${draft.anonymization_mode === value ? "selected" : ""}>${value}</option>`).join("")}
           </select>
         </div>
@@ -3964,7 +3960,7 @@ function renderDbTargetsPanel() {
           <input id="dbTargetModelInput" data-db-target-field="llm_model" type="text" value="${escapeHtml(draft.llm_model)}">
         </div>
       </div>
-      ${prod ? `<div class="db-target-inline-hint">Target prod: write OFF e anonymization ON sono hard-fenced lato backend/MCP.</div>` : ""}
+      ${prod ? `<div class="db-target-inline-hint">Target prod: scrittura disabilitata. Se disattivi l’anonimizzazione, le letture restituiscono i dati originali.</div>` : ""}
     </div>
     <div class="db-target-editor-section">
       <h4>Limiti e Tool</h4>
