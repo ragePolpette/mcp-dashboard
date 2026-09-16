@@ -122,7 +122,7 @@ opzioni avanzate non rappresentabili nel modulo rimane modificabile dal Vault,
 senza riscriverla automaticamente. I riferimenti manuali restano in Avanzate.
 
 Dopo aver salvato connessione, stato e policy, premi **Applica al server SQL**:
-valida i riferimenti attivi e riavvia soltanto `llm-sql-db-mcp`. Per PROD serve
+valida i riferimenti attivi e riavvia soltanto `llm-sql-db-mcp`. Per PROD con anonimizzazione attiva serve
 anche il salt di anonimizzazione nelle opzioni del servizio. Le sessioni MCP in
 corso vengono interrotte dal riavvio. Il salvataggio e lo stato healthy non
 certificano la connettivita al database; non viene eseguita una query di prova.
@@ -131,3 +131,7 @@ Bloccare il Vault non rimuove le credenziali dai processi gia avviati: arresta i
 servizio SQL per rimuoverle dalla sua memoria. Il Vault deve essere sbloccato per
 applicare target attivi. Le verifiche automatiche usano soltanto dati sintetici:
 `python -m pytest -q`.
+
+L’anonimizzazione e configurabile anche per PROD. Disattivarla restituisce i dati
+originali nelle letture; la scrittura PROD resta disabilitata. Salvare il target e
+premere Applica al server SQL per rendere effettiva la scelta.

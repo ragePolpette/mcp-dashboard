@@ -717,8 +717,8 @@ def db_targets_runtime_apply() -> dict[str, Any]:
         missing += [target["target_id"] for target in active if not env.get(target["connection"]["env_var"])]
         if missing:
             raise ValueError("Configura e sblocca le credenziali richieste prima di applicare: " + ", ".join(missing))
-        if any(target["environment"] == "prod" for target in active) and not env.get("ANON_HASH_SALT"):
-            raise ValueError("Configura il salt di anonimizzazione nelle opzioni SQL prima di abilitare PROD.")
+        if any(target["environment"] == "prod" and target["anonymization"]["enabled"] for target in active) and not env.get("ANON_HASH_SALT"):
+            raise ValueError("Configura il salt di anonimizzazione nelle opzioni SQL prima di applicare PROD con anonimizzazione.")
         db_target_registry.sync_runtime()
         result = process_manager.restart(service, env_overrides=env)
         if not result.get("ok") or not (result.get("status") or {}).get("health_ok"):

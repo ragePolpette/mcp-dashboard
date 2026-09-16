@@ -122,3 +122,25 @@ def test_apply_requires_prod_salt_and_reports_start_failure(setup, monkeypatch):
     restart.assert_not_called()
     monkeypatch.setattr(main.options_manager, 'options_env', lambda service: {'ANON_HASH_SALT': 'synthetic-salt'})
     assert client.post('/api/db-targets/runtime/apply').status_code == 503
+
+
+def test_prod_can_disable_anonymization_and_apply_without_salt(setup, monkeypatch):
+    client, _, registry, _ = setup
+    monkeypatch.setattr(main.options_manager, 'options_env', lambda service: {})
+    monkeypatch.setattr(main.options_manager, 'missing_required_options', lambda *a, **kw: [])
+    restart = Mock(return_value={'ok': True, 'status': {'health_ok': True}})
+    monkeypatch.setattr(main.process_manager, 'restart', restart)
+    assert client.put('/api/db-targets/example/connection', json=PROFILE).status_code == 200
+    registry.update_target('example', {'environment': 'prod', 'status': 'active',
+        'anonymization': {'enabled': True, 'mode': 'hybrid', 'provider': 'ollama', 'model': 'test-model'}})
+    response = client.put('/api/db-targets/example', json={'values': {'anonymization': {'enabled': False}}})
+    assert response.status_code == 200
+    target = response.json()['target']
+    assert target['anonymization'] == {'enabled': False, 'mode': 'off', 'provider': 'none', 'model': ''}
+    assert target['runtime']['anonymization_required'] is False
+    assert target['policy']['write_policy'] == 'deny'
+    exported = registry.runtime_snapshot()['targets'][0]
+    assert exported['anonymization_enabled'] is False
+    assert exported['anonymization_mode'] == 'off'
+    assert client.post('/api/db-targets/runtime/apply').status_code == 200
+    restart.assert_called_once()

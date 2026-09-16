@@ -390,13 +390,6 @@ class DbTargetRegistry:
             anonymization_provider = "none"
             anonymization_model = ""
 
-        if environment == "prod":
-            anonymization_enabled = True
-            if anonymization_mode == "off":
-                anonymization_mode = "hybrid"
-            if anonymization_provider == "none" or not anonymization_model:
-                raise ValueError("prod targets require anonymization provider and model.")
-
         if write_policy == "deny" and "db_write" in allowed_tools:
             allowed_tools = [tool for tool in allowed_tools if tool != "db_write"]
 
@@ -531,7 +524,7 @@ class DbTargetRegistry:
             "runtime": {
                 "write_enabled": policy.get("write_policy") == "allow" and target["status"] == "active",
                 "allowed_tools": runtime_allowed_tools,
-                "anonymization_required": target["environment"] == "prod",
+                "anonymization_required": bool(anonymization.get("enabled", False)),
             },
             "state": copy.deepcopy(target.get("state", {})),
         }
