@@ -43,11 +43,9 @@
             <div>
               <h3>DB Targets</h3>
               <p id="dbTargetsSummary" class="muted">Registry target DB non caricato.</p>
-              <p class="muted">Source of truth per connessioni, policy per-target, vault ref e runtime export di <code>llm-sql-db-mcp</code>.</p>
+              <p class="muted">Scegli per ogni target una connection string già salvata nel Local Vault. Avvia o riavvia il servizio SQL dopo aver sbloccato il Vault.</p>
             </div>
             <div class="db-targets-actions">
-              <button id="dbTargetsApplyBtn" type="button" class="btn-ok" title="Applica le modifiche riavviando solo il server SQL">Applica al server SQL</button>
-              <button id="dbTargetsSyncBtn" type="button">Sync Runtime</button>
               <button id="dbTargetsReloadBtn" type="button">Ricarica</button>
               <button id="dbTargetNewBtn" type="button" class="btn-ok">Nuovo Target</button>
             </div>
@@ -58,7 +56,6 @@
             <section class="db-target-editor">
               <div id="dbTargetEditorMeta" class="db-target-editor-meta muted">Seleziona un target o creane uno nuovo.</div>
               <form id="dbTargetEditorForm" class="db-target-editor-form"></form>
-              <section id="dbConnectionPanel" class="db-target-editor-section"></section>
             </section>
           </div>
         </section>
@@ -495,7 +492,6 @@
   <script src="/assets/sql-connections.js"></script>
 </body>
 </html>
-
 
 
 

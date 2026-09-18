@@ -85,6 +85,7 @@ def test_sql_service_start_uses_runtime_registry_env_and_vault_ref(monkeypatch):
         registry, vault = _make_registry(tmp, with_vault=True)
         assert vault is not None
         vault.upsert_secret("db.prod.main", "Server=.;Database=Prod;")
+        registry.update_target("dev-main", {"status": "disabled"})
         registry.update_target("prod-main", {"connection": {"vault_ref": "db.prod.main"}})
 
         service = ServiceDefinition(

@@ -648,7 +648,8 @@ def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
 @app.delete("/api/vault/entries")
 def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
     try:
-        status = vault_manager.delete_secret(ref)
+        vault_manager.delete_secret(ref)
+        status = vault_manager.status()
     except LocalSecretVaultError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
     return {
@@ -714,6 +715,13 @@ def db_targets_runtime_apply() -> dict[str, Any]:
         env = _runtime_env_overrides(service)
         missing = options_manager.missing_required_options(service, env_overrides=env)
         active = [target for target in db_target_registry.list_targets() if target["status"] == "active"]
+        invalid_connections = [
+            f'{target["target_id"]}: {target["connection"].get("status_message", "connection string non valida")}'
+            for target in active
+            if not target["connection"].get("is_ready")
+        ]
+        if invalid_connections:
+            raise ValueError("Correggi la connection string selezionata dal Vault prima di applicare: " + "; ".join(invalid_connections))
         missing += [target["target_id"] for target in active if not env.get(target["connection"]["env_var"])]
         if missing:
             raise ValueError("Configura e sblocca le credenziali richieste prima di applicare: " + ", ".join(missing))
@@ -1027,8 +1035,15 @@ def service_options_update(service_id: str, payload: OptionUpdatePayload) -> dic
 def service_start(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
+        if service_id == "llm-sql-db-mcp":
+            # A vault unlock changes the process environment contract. Refresh
+            # the runtime snapshot immediately before launching the child.
+            db_target_registry.sync_runtime()
         env_overrides = _runtime_env_overrides(service)
         missing_options = options_manager.missing_required_options(service, env_overrides=env_overrides)
+        if service_id == "llm-sql-db-mcp":
+            active = [target for target in db_target_registry.list_targets() if target["status"] == "active"]
+            missing_options += [target["target_id"] for target in active if not env_overrides.get(target["connection"]["env_var"])]
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
@@ -1050,8 +1065,13 @@ def service_stop(service_id: str) -> dict[str, Any]:
 def service_restart(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
+        if service_id == "llm-sql-db-mcp":
+            db_target_registry.sync_runtime()
         env_overrides = _runtime_env_overrides(service)
         missing_options = options_manager.missing_required_options(service, env_overrides=env_overrides)
+        if service_id == "llm-sql-db-mcp":
+            active = [target for target in db_target_registry.list_targets() if target["status"] == "active"]
+            missing_options += [target["target_id"] for target in active if not env_overrides.get(target["connection"]["env_var"])]
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
@@ -1147,6 +1167,3 @@ async def stream_logs(service_id: str) -> StreamingResponse:
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
-
-
-
