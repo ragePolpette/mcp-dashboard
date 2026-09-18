@@ -3813,16 +3813,24 @@ function collectDbTargetPayload() {
 }
 
 async function loadDbTargets() {
+  const selectedAtRequest = dbTargetsState.selectedId;
+  const draftAtRequest = dbTargetsState.draft;
+  const request = (dbTargetsState.loadRequest || 0) + 1;
+  dbTargetsState.loadRequest = request;
   dbTargetsState.loading = true;
   dbTargetsState.error = "";
   try {
     const payload = await apiJson("/api/db-targets");
+    if (request !== dbTargetsState.loadRequest) return;
     dbTargetsState.items = Array.isArray(payload.targets)
       ? payload.targets.map(item => normalizeDbTargetRecord(item))
       : [];
     dbTargetsState.runtimeExportPath = String(payload.runtime_export_path || "");
     dbTargetsState.runtime = payload.runtime && typeof payload.runtime === "object" ? cloneValue(payload.runtime) : null;
 
+    if (dbTargetsState.selectedId !== selectedAtRequest || dbTargetsState.draft !== draftAtRequest) {
+      return; // Preserve target selection and edits made while the request was pending.
+    }
     if (dbTargetsState.selectedId && dbTargetsState.selectedId !== "__new__") {
       const selected = dbTargetsState.items.find(item => item.target_id === dbTargetsState.selectedId);
       if (selected) {
@@ -3838,12 +3846,13 @@ async function loadDbTargets() {
       }
     }
   } catch (error) {
+    if (request !== dbTargetsState.loadRequest) return;
     dbTargetsState.error = error.message;
     dbTargetsState.items = [];
     dbTargetsState.runtimeExportPath = "";
     dbTargetsState.runtime = null;
   } finally {
-    dbTargetsState.loading = false;
+    if (request === dbTargetsState.loadRequest) dbTargetsState.loading = false;
     renderDbTargetsPanel();
   }
 }
@@ -4081,6 +4090,8 @@ function handleDbTargetDraftChange(event) {
 
 async function saveDbTargetFromEditor(event) {
   event.preventDefault();
+  const selectedAtSave = dbTargetsState.selectedId;
+  const draftAtSave = dbTargetsState.draft;
   const payload = collectDbTargetPayload();
   if (!payload.target_id) {
     window.alert("Il target_id è obbligatorio.");
@@ -4100,6 +4111,15 @@ async function saveDbTargetFromEditor(event) {
       body: JSON.stringify({ values: payload })
     });
     setDbTargetsFlash(`Target ${payload.target_id} salvato.`, "success");
+    if (dbTargetsState.selectedId !== selectedAtSave || dbTargetsState.draft !== draftAtSave) {
+      if (response?.target) {
+        const index = dbTargetsState.items.findIndex(item => item.target_id === response.target.target_id);
+        const record = normalizeDbTargetRecord(response.target);
+        if (index >= 0) dbTargetsState.items[index] = record;
+        else dbTargetsState.items.push(record);
+      }
+      return;
+    }
     if (response?.target) {
       setDbTargetDraft(response.target, response.target.target_id);
     }
@@ -4961,7 +4981,6 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
-
 
 
 

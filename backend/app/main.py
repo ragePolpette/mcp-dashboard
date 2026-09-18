@@ -1038,6 +1038,11 @@ def service_start(service_id: str) -> dict[str, Any]:
         if service_id == "llm-sql-db-mcp":
             # A vault unlock changes the process environment contract. Refresh
             # the runtime snapshot immediately before launching the child.
+            invalid = [f'{target["target_id"]}: {target["connection"].get("status_message", "Connessione non pronta")}'
+                       for target in db_target_registry.list_targets()
+                       if target["status"] == "active" and not target["connection"].get("is_ready")]
+            if invalid:
+                raise ValueError("Correggi le connessioni dei target: " + "; ".join(invalid))
             db_target_registry.sync_runtime()
         env_overrides = _runtime_env_overrides(service)
         missing_options = options_manager.missing_required_options(service, env_overrides=env_overrides)
