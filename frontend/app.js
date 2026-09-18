@@ -161,6 +161,7 @@ let vaultState = {
   entry_count: 0,
   entries: []
 };
+let vaultEditingRef = "";
 let refreshTimer = null;
 let cardRenderTimer = null;
 let advancedQueryRefreshTimer = null;
@@ -2793,19 +2794,25 @@ function renderVaultPanel() {
     vaultControls.appendChild(row);
     row.querySelector("#vaultUnlockBtn").addEventListener("click", unlockVault);
   } else {
+    const editing = Boolean(vaultEditingRef);
     const tools = document.createElement("div");
     tools.className = "vault-tool-stack";
     tools.innerHTML = `
       <div class="vault-inline-form vault-inline-form-wide">
-        <input id="vaultEntryRef" type="text" placeholder="es. db.prod.connection_string">
-        <input id="vaultEntryValue" type="password" placeholder="valore secret" autocomplete="new-password">
-        <button id="vaultSaveEntryBtn" class="btn-ok">Salva nel Local Vault</button>
+        <input id="vaultEntryRef" type="text" placeholder="es. db.prod.connection_string" value="${escapeHtml(vaultEditingRef)}" ${editing ? "readonly" : ""}>
+        <input id="vaultEntryValue" type="password" placeholder="${editing ? "nuovo valore secret" : "valore secret"}" autocomplete="new-password">
+        <button id="vaultSaveEntryBtn" class="btn-ok">${editing ? "Aggiorna secret" : "Salva nel Local Vault"}</button>
+        ${editing ? '<button id="vaultCancelEditBtn" type="button">Annulla modifica</button>' : ""}
         <button id="vaultLockBtn">Lock Local Vault</button>
       </div>
       <div class="option-hint">Stai salvando nel Local Vault della dashboard. Inserisci un nome logico, salva la chiave e usa poi il ref mostrato sotto o nella lista. Il valore non verra' mai mostrato di nuovo in chiaro.</div>
     `;
     vaultControls.appendChild(tools);
     tools.querySelector("#vaultSaveEntryBtn").addEventListener("click", saveVaultEntry);
+    tools.querySelector("#vaultCancelEditBtn")?.addEventListener("click", () => {
+      vaultEditingRef = "";
+      renderVaultPanel();
+    });
     tools.querySelector("#vaultLockBtn").addEventListener("click", lockVault);
   }
 
@@ -2833,12 +2840,18 @@ function renderVaultPanel() {
         </div>
         <div class="vault-entry-actions">
           <button type="button" data-vault-copy="${entry.ref}">Copia ref</button>
+          <button type="button" data-vault-edit="${entry.ref}">Modifica</button>
           <button type="button" class="btn-warn" data-vault-delete="${entry.ref}">Elimina</button>
         </div>
       `;
       row.querySelector("[data-vault-copy]").addEventListener("click", async () => {
         await copyToClipboard(entry.ref);
         setSettingsFlash("Ref copiato negli appunti.", "success", entry.ref);
+      });
+      row.querySelector("[data-vault-edit]").addEventListener("click", () => {
+        vaultEditingRef = entry.ref;
+        renderVaultPanel();
+        document.getElementById("vaultEntryValue")?.focus();
       });
       row.querySelector("[data-vault-delete]").addEventListener("click", () => deleteVaultEntry(entry.ref));
       list.appendChild(row);
@@ -2947,6 +2960,7 @@ async function saveVaultEntry() {
       ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
     };
     const normalizedRef = String(payload.entry?.ref || ref).trim();
+    vaultEditingRef = "";
     if (refInput) {
       refInput.value = normalizedRef;
     }
@@ -3571,6 +3585,8 @@ function normalizeDbTargetAllowedTools(value) {
   return [];
 }
 
+const DB_TARGET_TOOL_OPTIONS = ["db_target_info", "db_policy_info", "db_read", "db_write"];
+
 function normalizeDbTargetBinding(binding = {}, connectionVaultRef = "") {
   const vaultRef = normalizeDbTargetText(
     binding.vault_ref ?? binding.connection_vault_ref ?? binding.ref ?? connectionVaultRef
@@ -3974,23 +3990,27 @@ function renderDbTargetsPanel() {
           <input id="dbTargetMaxBytesInput" data-db-target-field="max_result_bytes" type="number" min="1" value="${escapeHtml(draft.max_result_bytes)}">
         </div>
         <div class="db-target-field">
-          <label for="dbTargetAllowedToolsInput">Allowed Tools</label>
-          <input id="dbTargetAllowedToolsInput" data-db-target-field="allowed_tools" type="text" value="${escapeHtml(draft.allowed_tools.join(", "))}">
+          <label>Allowed Tools</label>
+          <div class="db-target-inline-hint">Seleziona gli strumenti che questo target può esporre.</div>
+          ${DB_TARGET_TOOL_OPTIONS.map(tool => `<label class="settings-toggle"><input data-db-target-tool="${tool}" type="checkbox" ${draft.allowed_tools.includes(tool) ? "checked" : ""}>${tool}</label>`).join("")}
         </div>
       </div>
     </div>
     <div class="db-target-editor-section">
-      <h4>Avanzate</h4>
-      <div class="db-target-inline-hint">Connessione runtime del target: Local Vault Ref e variabile ambiente usata dal processo MCP.</div>
+      <h4>Connection string</h4>
+      <div class="db-target-inline-hint">La stringa viene gestita solo nel Local Vault. Seleziona qui il suo riferimento.</div>
       <div class="db-target-field-grid">
         <div class="db-target-field">
-          <label for="dbTargetVaultRefInput">Local Vault Ref</label>
-          <input id="dbTargetVaultRefInput" data-db-target-field="connection_vault_ref" type="text" value="${escapeHtml(draft.connection_vault_ref)}" placeholder="vault://db.prod.connection">
-          <div class="db-target-inline-hint">${escapeHtml(binding.statusMessage)}</div>
-        </div>
-        <div class="db-target-field">
-          <label for="dbTargetEnvVarInput">Runtime Env Var</label>
-          <input id="dbTargetEnvVarInput" data-db-target-field="connection_env_var" type="text" value="${escapeHtml(draft.connection_env_var)}">
+          <label for="dbTargetVaultRefInput">Connection string dal Local Vault</label>
+          <select id="dbTargetVaultRefInput" data-db-target-field="connection_vault_ref">
+            <option value="">Seleziona una connection string dal Vault</option>
+            ${(() => {
+              const refs = [...new Set((vaultState.entries || []).map(entry => normalizeDbTargetText(entry?.ref)).filter(Boolean))];
+              if (draft.connection_vault_ref && !refs.includes(draft.connection_vault_ref)) refs.unshift(draft.connection_vault_ref);
+              return refs.map(ref => `<option value="${escapeHtml(ref)}" ${draft.connection_vault_ref === ref ? "selected" : ""}>${escapeHtml(ref)}</option>`).join("");
+            })()}
+          </select>
+          <div class="db-target-inline-hint">${escapeHtml(binding.statusMessage || "Scegli un ref che contiene una SQL Server connection string.")}</div>
         </div>
       </div>
     </div>
@@ -4005,10 +4025,25 @@ function renderDbTargetsPanel() {
     input.addEventListener("input", handleDbTargetDraftChange);
     input.addEventListener("change", handleDbTargetDraftChange);
   });
+  dbTargetEditorForm.querySelectorAll("[data-db-target-tool]").forEach(input => {
+    input.addEventListener("change", handleDbTargetToolChange);
+  });
   dbTargetEditorForm.addEventListener("submit", saveDbTargetFromEditor);
   dbTargetEditorForm.querySelector("#dbTargetDisableBtn")?.addEventListener("click", disableSelectedDbTarget);
   dbTargetEditorForm.querySelector("#dbTargetEnableBtn")?.addEventListener("click", enableSelectedDbTarget);
   if (typeof renderSqlConnectionPanel === "function") renderSqlConnectionPanel();
+}
+
+function handleDbTargetToolChange(event) {
+  const tool = normalizeDbTargetText(event.target?.dataset?.dbTargetTool);
+  if (!tool) return;
+  const draft = cloneValue(getDbTargetDraft());
+  const selected = new Set(normalizeDbTargetAllowedTools(draft.allowed_tools));
+  if (event.target.checked) selected.add(tool);
+  else selected.delete(tool);
+  draft.allowed_tools = [...selected];
+  setDbTargetDraft(draft);
+  renderDbTargetsPanel();
 }
 
 function handleDbTargetDraftChange(event) {
@@ -4041,6 +4076,7 @@ function handleDbTargetDraftChange(event) {
   const replacement = document.getElementById(inputId);
   replacement?.focus();
   if (replacement && selection) replacement.setSelectionRange(...selection);
+
 }
 
 async function saveDbTargetFromEditor(event) {
@@ -4925,11 +4961,6 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
-
-
-
-
-
 
 
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
+from .sql_connections import validate_connection_string
 
 ALLOWED_DB_KINDS = {"sqlserver"}
 ALLOWED_STATUSES = {"active", "disabled"}
@@ -295,8 +296,8 @@ class DbTargetRegistry:
             or _default_connection_env_var(target_id),
         )
         connection_vault_ref = _normalize_vault_ref(
-            connection_raw.get("vault_ref")
-            or source.get("connection_vault_ref")
+            source.get("connection_vault_ref")
+            or connection_raw.get("vault_ref")
             or connection_existing.get("vault_ref"),
             vault=self._vault,
         )
@@ -325,9 +326,9 @@ class DbTargetRegistry:
         ).get("anonymization", {}) if isinstance((existing or {}).get("anonymization"), dict) else {}
         anonymization_raw = self._merge_section(source, existing or {}, "anonymization")
         anonymization_enabled = _clean_bool(
-            anonymization_raw.get("enabled")
-            if "enabled" in anonymization_raw
-            else source.get("anonymization_enabled", anonymization_existing.get("enabled", False)),
+            source["anonymization_enabled"]
+            if "anonymization_enabled" in raw
+            else anonymization_raw.get("enabled", anonymization_existing.get("enabled", False)),
             fallback=False,
         )
         anonymization_mode = _clean_text(
@@ -470,7 +471,7 @@ class DbTargetRegistry:
                 "status_message": "Vault bloccato: sbloccalo per usare il ref.",
             }
         try:
-            self._vault.resolve_secret(ref)
+            validate_connection_string(self._vault.resolve_secret(ref))
         except LocalSecretVaultError as exc:
             return {
                 "is_set": True,
@@ -479,6 +480,15 @@ class DbTargetRegistry:
                 "status": "vault_ref_invalid",
                 "vault_ref": ref,
                 "status_message": exc.message,
+            }
+        except ValueError as exc:
+            return {
+                "is_set": True,
+                "is_ready": False,
+                "source": "vault",
+                "status": "connection_string_invalid",
+                "vault_ref": ref,
+                "status_message": str(exc),
             }
         return {
             "is_set": True,
@@ -664,8 +674,10 @@ class DbTargetRegistry:
                 if not env_var or not vault_ref:
                     continue
                 try:
-                    env_overrides[env_var] = self._vault.resolve_secret(vault_ref)
-                except LocalSecretVaultError:
+                    connection_string = self._vault.resolve_secret(vault_ref)
+                    validate_connection_string(connection_string)
+                    env_overrides[env_var] = connection_string
+                except (LocalSecretVaultError, ValueError):
                     continue
             return env_overrides
 

@@ -59,6 +59,16 @@ def parse_connection_string(value: str) -> dict[str, str]:
     return result
 
 
+def validate_connection_string(value: str) -> None:
+    """Validate the minimum SqlClient shape without returning the secret."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("La connection string del Vault e' vuota.")
+    values = parse_connection_string(value)
+    endpoint = _get(values, "server", "data source", "address", "addr", "network address")
+    if not endpoint:
+        raise ValueError("La connection string del Vault deve includere Server (o Data Source).")
+
+
 def _get(values: dict[str, str], *keys: str, default: str = "") -> str:
     return next((values[key] for key in keys if key in values), default)
 
