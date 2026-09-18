@@ -40,5 +40,7 @@ test('target markup belongs to advanced section, with one form and local feedbac
   assert.equal(html.includes('settingsDbTargetsTabBtn'),false);
   assert.equal(html.includes('settingsDbTargetsView'),false);
   assert.ok(html.indexOf('id="advancedDbTargetsView"') < html.indexOf('id="settingsPanel"'));
-  for(const id of ['dbTargetEditorForm','dbConnectionPanel','dbTargetsFlash']) assert.equal(html.split(`id="${id}"`).length,2);
+  for(const id of ['dbTargetEditorForm','dbTargetsFlash']) assert.equal(html.split(`id="${id}"`).length,2);
+  // Connections are edited in the Vault; targets select their own reference.
+  assert.equal(html.includes('id="dbConnectionPanel"'),false);
 });

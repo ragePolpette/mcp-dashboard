@@ -15,6 +15,23 @@ from app.sql_connections import build_connection_string, parse_connection_string
 PASSWORD = ' Synthetic;"quoted"=password '
 PROFILE = dict(server='sql.example.test', port=1433, database='example', username='reader', password=PASSWORD)
 
+def test_sqlclient_aliases_are_supported():
+    from app.sql_connections import validate_connection_string
+    validate_connection_string('Data Source=sql.example.test;Initial Catalog=sample;User ID=reader;Password=synthetic;')
+
+def test_start_reports_target_validation_without_launching(setup, monkeypatch):
+    client, vault, registry, _ = setup
+    vault.upsert_secret('db.invalid', 'Database=sample;User ID=reader;Password=synthetic;')
+    registry.update_target('example', {'status': 'active', 'connection': {'vault_ref': 'db.invalid'}})
+    start = Mock()
+    monkeypatch.setattr(main.process_manager, 'start', start)
+    response = client.post('/api/services/llm-sql-db-mcp/start')
+    assert response.status_code == 400
+    assert 'example' in response.json()['detail']
+    assert 'Data Source' in response.json()['detail']
+    assert 'synthetic' not in response.text
+    start.assert_not_called()
+
 @pytest.fixture
 def setup(tmp_path, monkeypatch):
     vault = DashboardSecretVault(tmp_path / 'vault')

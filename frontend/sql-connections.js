@@ -13,12 +13,20 @@ function renderSqlConnectionPanel(force = false) {
   const panel = document.getElementById("dbConnectionPanel");
   if (!panel) return;
   const targetId = dbTargetsState.selectedId;
-  if (!force && panel.dataset.targetId === String(targetId)) return;
+  const vaultRef = getDbTargetDraft().connection_vault_ref || "";
+  if (!force && panel.dataset.targetId === String(targetId) && panel.dataset.vaultRef === vaultRef) return;
   sqlConnectionTargetId = targetId;
   panel.dataset.targetId = String(targetId);
+  panel.dataset.vaultRef = vaultRef;
   const request = ++sqlConnectionRequest;
   if (!targetId || targetId === "__new__") {
     panel.innerHTML = '<h4>Connessione SQL Server</h4><p class="muted">Crea il target, poi configura qui server, database e credenziali.</p>';
+    return;
+  }
+  const saved = dbTargetsState.items.find(item => item.target_id === targetId);
+  const savedRef = saved?.connection?.vault_ref ?? saved?.connection_vault_ref ?? "";
+  if (vaultRef !== savedRef) {
+    panel.innerHTML = '<h4>Connessione SQL Server</h4><p class="muted">Salva il target per caricare la connessione del nuovo riferimento Vault.</p>';
     return;
   }
   panel.innerHTML = '<h4>Connessione SQL Server</h4><p class="muted">Caricamento della connessione dal Vault…</p>';
@@ -61,6 +69,8 @@ async function loadSqlConnectionProfile(targetId, request) {
 
 async function saveSqlConnection(event, targetId) {
   event.preventDefault();
+  if (targetId !== dbTargetsState.selectedId) return;
+  const draftAtSave = dbTargetsState.draft;
   const form = event.currentTarget;
   const button = form.querySelector('button[type="submit"]');
   const feedback = form.querySelector("#sqlConnectionFeedback");
@@ -80,7 +90,10 @@ async function saveSqlConnection(event, targetId) {
     form.elements.password.required = false;
     form.elements.password.placeholder = "Già salvata: lascia vuoto per conservarla";
     feedback.textContent = "Connessione salvata. Abilita il target quando pronto, poi premi Applica al server SQL.";
-    await loadDbTargets();
+    if (targetId === dbTargetsState.selectedId && dbTargetsState.draft === draftAtSave) {
+      await loadDbTargets();
+      renderSqlConnectionPanel(true);
+    }
   } catch (error) {
     feedback.textContent = error.message;
   } finally {
