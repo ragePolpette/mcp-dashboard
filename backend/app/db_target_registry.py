@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -71,10 +72,15 @@ def _clean_int(value: Any, *, fallback: int, minimum: int = 1) -> int:
 
 
 def _default_connection_env_var(target_id: str) -> str:
-    normalized = _clean_text(target_id).replace("-", "_")
-    normalized = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in normalized)
-    normalized = normalized.strip("_").upper()
-    return f"DB_{normalized}_CONNECTION_STRING"
+    return f"DB_ID_{target_id.encode('utf-8').hex().upper()}_CONNECTION_STRING"
+
+
+def _max_bytes(value: Any) -> int | None:
+    if value is None or (isinstance(value, str) and value.strip().lower() == "any"):
+        return None
+    if isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value)) or int(value) < 1:
+        raise ValueError("max_result_bytes must be a positive integer or null (Any).")
+    return int(value)
 
 
 def _normalize_vault_ref(ref: Any, *, vault: DashboardSecretVault | None = None) -> str:
@@ -214,6 +220,10 @@ class DbTargetRegistry:
     def _load(self) -> None:
         with self._lock:
             self._targets = [self._normalize_target(target) for target in self._load_source_targets()]
+            if len({target["target_id"] for target in self._targets}) != len(self._targets):
+                raise ValueError("Duplicate target_id in saved registry.")
+            for target in self._targets:
+                self._validate_connection_binding(target)
             self._publish_runtime()
 
     def _save(self) -> None:
@@ -269,10 +279,27 @@ class DbTargetRegistry:
     ) -> dict[str, Any]:
         source = copy.deepcopy(existing or {})
         source.update(raw)
+        # Flat editor payloads must override persisted nested sections.
+        aliases = {
+            "connection": {"connection_env_var": "env_var", "connection_vault_ref": "vault_ref"},
+            "policy": {"read_enabled": "read_enabled", "write_policy": "write_policy"},
+            "limits": {"max_rows": "max_rows", "max_result_bytes": "max_result_bytes"},
+            "anonymization": {"anonymization_enabled": "enabled", "anonymization_mode": "mode",
+                              "anonymization_provider": "provider", "anonymization_model": "model",
+                              "llm_provider": "provider", "llm_model": "model"},
+        }
+        for section, fields in aliases.items():
+            values = self._merge_section(raw, existing or {}, section)
+            for flat, nested in fields.items():
+                if flat in raw:
+                    values[nested] = raw[flat]
+            source[section] = values
 
         target_id = _clean_text(source.get("target_id") or (existing or {}).get("target_id"))
         if not target_id:
             raise ValueError("target_id is required.")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", target_id):
+            raise ValueError("target_id must start with a letter or digit and contain only letters, digits, _, - or .; display_name is unrestricted.")
 
         display_name = _clean_text(source.get("display_name") or (existing or {}).get("display_name"), fallback=target_id)
         environment = _clean_text(source.get("environment") or (existing or {}).get("environment"), fallback="dev").lower()
@@ -296,9 +323,7 @@ class DbTargetRegistry:
             or _default_connection_env_var(target_id),
         )
         connection_vault_ref = _normalize_vault_ref(
-            source.get("connection_vault_ref")
-            or connection_raw.get("vault_ref")
-            or connection_existing.get("vault_ref"),
+            connection_raw.get("vault_ref", ""),
             vault=self._vault,
         )
 
@@ -356,16 +381,14 @@ class DbTargetRegistry:
             fallback=100,
             minimum=1,
         )
-        max_result_bytes = _clean_int(
+        max_result_bytes = _max_bytes(
             limits_raw.get("max_result_bytes")
             if "max_result_bytes" in limits_raw
             else source.get("max_result_bytes", limits_existing.get("max_result_bytes", 131072)),
-            fallback=131072,
-            minimum=1,
         )
 
         allowed_tools = _unique_text_list(
-            source.get("allowed_tools") or (existing or {}).get("allowed_tools"),
+            source.get("allowed_tools"),
             fallback=DEFAULT_ALLOWED_TOOLS,
         )
 
@@ -559,6 +582,7 @@ class DbTargetRegistry:
                 raise ValueError(f"Duplicate target_id: {target_id}")
 
             target = self._normalize_target(payload)
+            self._validate_connection_binding(target)
             self._targets.append(target)
             self._publish_runtime()
             return copy.deepcopy(self._public_target(target))
@@ -569,13 +593,21 @@ class DbTargetRegistry:
             if idx < 0:
                 raise ValueError(f"Unknown target_id: {target_id}")
             current = self._targets[idx]
-            merged = copy.deepcopy(current)
-            merged.update(payload)
+            merged = copy.deepcopy(payload)
             merged["target_id"] = target_id
             target = self._normalize_target(merged, existing=current)
+            self._validate_connection_binding(target)
             self._targets[idx] = target
             self._publish_runtime()
             return copy.deepcopy(self._public_target(target))
+
+    def _validate_connection_binding(self, target: dict[str, Any]) -> None:
+        env_var = target["connection"]["env_var"]
+        if not re.fullmatch(r"[A-Z0-9_]+", env_var):
+            raise ValueError("connection_env_var must contain only A-Z, digits and underscores.")
+        if any(item["target_id"] != target["target_id"] and item["connection"]["env_var"] == env_var
+               for item in self._targets):
+            raise ValueError("connection_env_var is already assigned to another target.")
 
     def delete_target(self, target_id: str) -> dict[str, Any]:
         with self._lock:

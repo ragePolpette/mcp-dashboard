@@ -3568,11 +3568,13 @@ function normalizeDbTargetStatus(value) {
 }
 
 function buildDbTargetConnectionEnvVar(targetId) {
-  const normalized = normalizeDbTargetText(targetId)
-    .replace(/[^A-Za-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .toUpperCase();
-  return normalized ? `DB_${normalized}_CONNECTION_STRING` : "";
+  const normalized = Array.from(new TextEncoder().encode(normalizeDbTargetText(targetId)),
+    byte => byte.toString(16).padStart(2, "0")).join("").toUpperCase();
+  return normalized ? `DB_ID_${normalized}_CONNECTION_STRING` : "";
+}
+
+function normalizeDbTargetMaxBytes(value = 131072) {
+  return value === null || String(value).trim().toLowerCase() === "any" ? null : Number(value);
 }
 
 function normalizeDbTargetAllowedTools(value) {
@@ -3648,9 +3650,8 @@ function normalizeDbTargetRecord(raw = {}) {
     ).toLowerCase() || "none",
     llm_model: normalizeDbTargetText(raw.llm_model ?? anonymization.model ?? raw.llmModel ?? ""),
     max_rows: Number.isFinite(Number(raw.max_rows ?? limits.max_rows)) ? Number(raw.max_rows ?? limits.max_rows) : 100,
-    max_result_bytes: Number.isFinite(Number(raw.max_result_bytes ?? limits.max_result_bytes))
-      ? Number(raw.max_result_bytes ?? limits.max_result_bytes)
-      : 131072,
+    max_result_bytes: normalizeDbTargetMaxBytes(Object.hasOwn(raw, "max_result_bytes")
+      ? raw.max_result_bytes : limits.max_result_bytes),
     allowed_tools: normalizeDbTargetAllowedTools(raw.allowed_tools ?? raw.allowedTools ?? []),
     binding,
     raw
@@ -3699,14 +3700,10 @@ function normalizeDbTargetDraft(target) {
     draft.connection_env_var || buildDbTargetConnectionEnvVar(draft.target_id)
   );
   draft.allowed_tools = normalizeDbTargetAllowedTools(draft.allowed_tools);
-  if (!draft.allowed_tools.length) {
-    draft.allowed_tools = ["db_target_info", "db_policy_info", "db_read", "db_write"];
-  }
   if (!["allow", "approval_required", "deny"].includes(draft.write_policy)) {
     draft.write_policy = draft.write_enabled ? "allow" : "deny";
   }
   if (isDbTargetProd(draft)) {
-    draft.read_enabled = true;
     draft.write_policy = "deny";
     draft.write_enabled = false;
   }
@@ -3747,7 +3744,7 @@ function summarizeDbTargetPolicy(target) {
 }
 
 function summarizeDbTargetLimits(target) {
-  return `max_rows ${formatNumber(target.max_rows, 0)} | max_bytes ${formatNumber(target.max_result_bytes, 0)}`;
+  return `max_rows ${formatNumber(target.max_rows, 0)} | max_bytes ${target.max_result_bytes === null ? "Any" : formatNumber(target.max_result_bytes, 0)}`;
 }
 
 function summarizeRuntimeApplyStatus(runtime) {
@@ -3805,9 +3802,10 @@ function collectDbTargetPayload() {
   );
   draft.allowed_tools = normalizeDbTargetAllowedTools(draft.allowed_tools);
   draft.max_rows = Number.isFinite(Number(draft.max_rows)) ? Number(draft.max_rows) : 100;
-  draft.max_result_bytes = Number.isFinite(Number(draft.max_result_bytes))
-    ? Number(draft.max_result_bytes)
-    : 131072;
+  draft.max_result_bytes = normalizeDbTargetMaxBytes(draft.max_result_bytes);
+  if (draft.max_result_bytes !== null && (!Number.isSafeInteger(draft.max_result_bytes) || draft.max_result_bytes < 1)) {
+    throw new Error("Max Result Bytes: inserisci un intero positivo oppure Any.");
+  }
   draft.write_policy = normalizeDbTargetText(draft.write_policy, draft.write_enabled ? "allow" : "deny").toLowerCase();
   return normalizeDbTargetDraft(draft);
 }
@@ -3996,7 +3994,8 @@ function renderDbTargetsPanel() {
         </div>
         <div class="db-target-field">
           <label for="dbTargetMaxBytesInput">Max Result Bytes</label>
-          <input id="dbTargetMaxBytesInput" data-db-target-field="max_result_bytes" type="number" min="1" value="${escapeHtml(draft.max_result_bytes)}">
+          <input id="dbTargetMaxBytesInput" data-db-target-field="max_result_bytes" type="text" pattern="[Aa][Nn][Yy]|[1-9][0-9]*" title="Intero positivo oppure Any (senza limite byte)" value="${escapeHtml(draft.max_result_bytes === null ? "Any" : draft.max_result_bytes)}">
+          <small>Any = senza limite byte; Max Rows resta applicato.</small>
         </div>
         <div class="db-target-field">
           <label>Allowed Tools</label>
@@ -4062,6 +4061,10 @@ function handleDbTargetDraftChange(event) {
   }
 
   const draft = cloneValue(getDbTargetDraft());
+  if (field === "max_result_bytes") {
+    dbTargetsState.draft = {...draft, max_result_bytes: event.target.value};
+    return; // Keep partial text editable until submit (e.g. typing "Any").
+  }
   if (event.target.type === "checkbox") {
     draft[field] = Boolean(event.target.checked);
   } else {
@@ -4092,7 +4095,13 @@ async function saveDbTargetFromEditor(event) {
   event.preventDefault();
   const selectedAtSave = dbTargetsState.selectedId;
   const draftAtSave = dbTargetsState.draft;
-  const payload = collectDbTargetPayload();
+  let payload;
+  try {
+    payload = collectDbTargetPayload();
+  } catch (error) {
+    setDbTargetsFlash(error.message, "error");
+    return;
+  }
   if (!payload.target_id) {
     window.alert("Il target_id è obbligatorio.");
     return;
@@ -4981,9 +4990,6 @@ async function boot() {
 boot().catch(err => {
   widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
 });
-
-
-
 
 
 
