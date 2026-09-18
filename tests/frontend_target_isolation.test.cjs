@@ -50,3 +50,20 @@ test('out-of-order reloads cannot replace newer results',async()=>{
   pending[0].resolve({targets:[{target_id:'a',max_rows:1}]});await first;
   assert.equal(c.dbTargetsState.draft.max_rows,30);
 });
+
+test('actual normalization preserves Any, empty tools and distinct connection IDs',()=>{
+  const c={TextEncoder, cloneValue:x=>JSON.parse(JSON.stringify(x))};
+  vm.createContext(c);
+  const start=source.indexOf('function normalizeDbTargetText(');
+  const end=source.indexOf('function summarizeDbTargetBinding(');
+  vm.runInContext(source.slice(start,end),c);
+  const ids=['client-a','client_a','CLIENT-A'];
+  assert.equal(new Set(ids.map(id=>c.buildDbTargetConnectionEnvVar(id))).size,3);
+  for(const value of [null,'Any','any']) {
+    const draft=c.normalizeDbTargetDraft({target_id:'one',max_result_bytes:value,allowed_tools:[]});
+    assert.equal(draft.max_result_bytes,null);
+    assert.equal(draft.allowed_tools.length,0);
+  }
+  assert.equal(c.normalizeDbTargetDraft({target_id:'two',limits:{max_result_bytes:null}}).max_result_bytes,null);
+  assert.equal(c.normalizeDbTargetDraft({target_id:'two'}).max_result_bytes,131072);
+});
