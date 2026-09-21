@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .alert_engine import AlertEngine
+from .bitbucket_repository_registry import BitbucketRepositoryRegistry
 from .db_target_registry import DbTargetRegistry
 from .dashboard_settings import DashboardSettingsManager
 from .log_pipeline import LogPipeline
@@ -42,6 +43,7 @@ VAULT_ROOT = RUNTIME_DIR / "vault"
 DB_TARGETS_STATE = RUNTIME_DIR / "db_targets.json"
 DB_TARGETS_RUNTIME_EXPORT = RUNTIME_DIR / "llm_sql_db_targets.runtime.json"
 DB_TARGETS_BOOTSTRAP = CONFIG_DIR / "db_targets.bootstrap.json"
+BITBUCKET_REPOSITORIES_STATE = RUNTIME_DIR / "bitbucket_repositories.json"
 
 registry = ServiceRegistry(SERVICES_CONFIG)
 rule_engine = LogRuleEngine(RULES_CONFIG)
@@ -52,6 +54,7 @@ vault_manager = DashboardSecretVault(VAULT_ROOT)
 options_manager = ServiceOptionsManager(OPTIONS_STATE, vault=vault_manager)
 options_manager.scrub_persisted_secrets(registry.list_services())
 settings_manager = DashboardSettingsManager(DASHBOARD_SETTINGS_STATE)
+bitbucket_repository_registry = BitbucketRepositoryRegistry(BITBUCKET_REPOSITORIES_STATE)
 db_target_registry = DbTargetRegistry(
     DB_TARGETS_STATE,
     DB_TARGETS_RUNTIME_EXPORT,
@@ -91,6 +94,10 @@ class VaultEntryPayload(BaseModel):
 
 
 class DbTargetPayload(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class BitbucketRepositoryPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -144,6 +151,8 @@ def _runtime_env_overrides(service) -> dict[str, str]:
     overrides: dict[str, str] = {}
     if service.service_id == "llm-sql-db-mcp":
         overrides.update(db_target_registry.runtime_env())
+    if service.service_id == "llm-bitbucket-mcp":
+        overrides.update(bitbucket_repository_registry.runtime_env())
     overrides.update(options_manager.options_env(service))
     return overrides
 
@@ -656,6 +665,53 @@ def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
         "ok": True,
         "vault": {**status, "ref_usage": _combined_secret_ref_usage()},
     }
+
+
+@app.get("/api/bitbucket-repositories")
+def list_bitbucket_repositories() -> dict[str, Any]:
+    repositories = bitbucket_repository_registry.list_repositories()
+    return {"count": len(repositories), "repositories": repositories}
+
+
+@app.post("/api/bitbucket-repositories")
+def create_bitbucket_repository(payload: BitbucketRepositoryPayload) -> dict[str, Any]:
+    try:
+        repository = bitbucket_repository_registry.create_repository(payload.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "repository": repository}
+
+
+@app.put("/api/bitbucket-repositories/{repository_id}")
+def update_bitbucket_repository(repository_id: str, payload: BitbucketRepositoryPayload) -> dict[str, Any]:
+    try:
+        repository = bitbucket_repository_registry.update_repository(repository_id, payload.values)
+    except ValueError as exc:
+        status_code = 404 if "Unknown repository id" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return {"ok": True, "repository": repository}
+
+
+@app.post("/api/bitbucket-repositories/runtime/apply")
+def apply_bitbucket_repositories() -> dict[str, Any]:
+    service = _service_or_404("llm-bitbucket-mcp")
+    try:
+        env = _runtime_env_overrides(service)
+        missing = options_manager.missing_required_options(service, env_overrides=env)
+        if not any(item["status"] == "active" for item in bitbucket_repository_registry.list_repositories()):
+            missing.append("active Bitbucket repository")
+        if missing:
+            raise ValueError("Configura le opzioni richieste prima di applicare: " + ", ".join(missing))
+        current_status = process_manager.status(service)
+        if current_status.get("running"):
+            result = process_manager.restart(service, env_overrides=env)
+            message = "Configurazione applicata al server Bitbucket."
+        else:
+            result = {"ok": True, "status": current_status}
+            message = "Configurazione salvata; verra applicata al prossimo avvio del server Bitbucket."
+        return {"ok": True, "message": message, "status": result.get("status")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/db-targets")

@@ -14,7 +14,7 @@ function element() {
 }
 function context(service) {
   const ctx = {advancedServiceId:service, supportsInspector:()=>false, supportsMemoryAdmin:()=>false};
-  for (const name of ['tabOptionsBtn','advancedOptionsView','tabLogsBtn','advancedLogsView','tabInspectorBtn','advancedInspectorView','tabMemoryBtn','advancedMemoryView','tabDbTargetsBtn','advancedDbTargetsView','settingsServicesTabBtn','settingsDashboardTabBtn','settingsVaultTabBtn','settingsServicesView','settingsDashboardView','settingsVaultView']) ctx[name]=element();
+  for (const name of ['tabOptionsBtn','advancedOptionsView','tabLogsBtn','advancedLogsView','tabInspectorBtn','advancedInspectorView','tabMemoryBtn','advancedMemoryView','tabDbTargetsBtn','advancedDbTargetsView','tabRepositoriesBtn','advancedRepositoriesView','settingsServicesTabBtn','settingsDashboardTabBtn','settingsVaultTabBtn','settingsServicesView','settingsDashboardView','settingsVaultView']) ctx[name]=element();
   ctx.password=element();ctx.document={getElementById:()=>ctx.password};
   vm.createContext(ctx);
   vm.runInContext(source.slice(source.indexOf('function setAdvancedTab('), source.indexOf('function toDisplayText(')),ctx);
@@ -31,6 +31,14 @@ test('SQL target tab opens only for the SQL service and clears passwords on depa
   assert.equal(c.tabDbTargetsBtn.classList.contains('hidden'),true);
   assert.equal(c.advancedOptionsView.classList.contains('hidden'),false);
 });
+test('Bitbucket repository tab opens only for the Bitbucket service',()=>{
+  const c=context('llm-bitbucket-mcp');c.setAdvancedTab('repositories');
+  assert.equal(c.advancedRepositoriesView.classList.contains('hidden'),false);
+  assert.equal(c.tabRepositoriesBtn.attributes['aria-selected'],'true');
+  c.advancedServiceId='llm-sql-db-mcp';c.setAdvancedTab('repositories');
+  assert.equal(c.advancedRepositoriesView.classList.contains('hidden'),true);
+  assert.equal(c.advancedOptionsView.classList.contains('hidden'),false);
+});
 test('opening the global vault does not hide the SQL target view',()=>{
   const c=context('llm-sql-db-mcp');c.setAdvancedTab('db-targets');c.setSettingsTab('vault');
   assert.equal(c.settingsVaultView.classList.contains('hidden'),false);
@@ -43,4 +51,5 @@ test('target markup belongs to advanced section, with one form and local feedbac
   for(const id of ['dbTargetEditorForm','dbTargetsFlash']) assert.equal(html.split(`id="${id}"`).length,2);
   // Connections are edited in the Vault; targets select their own reference.
   assert.equal(html.includes('id="dbConnectionPanel"'),false);
+  for(const id of ['advancedRepositoriesView','repositoryEditorForm','repositoriesFlash']) assert.equal(html.split(`id="${id}"`).length,2);
 });

@@ -9,10 +9,12 @@ const closeSettingsBtn = document.getElementById("closeSettingsBtn");
 const settingsFlash = document.getElementById("settingsFlash");
 const settingsServicesTabBtn = document.getElementById("settingsServicesTabBtn");
 const tabDbTargetsBtn = document.getElementById("tabDbTargetsBtn");
+const tabRepositoriesBtn = document.getElementById("tabRepositoriesBtn");
 const settingsDashboardTabBtn = document.getElementById("settingsDashboardTabBtn");
 const settingsVaultTabBtn = document.getElementById("settingsVaultTabBtn");
 const settingsServicesView = document.getElementById("settingsServicesView");
 const advancedDbTargetsView = document.getElementById("advancedDbTargetsView");
+const advancedRepositoriesView = document.getElementById("advancedRepositoriesView");
 const settingsDashboardView = document.getElementById("settingsDashboardView");
 const settingsVaultView = document.getElementById("settingsVaultView");
 const settingsServicesList = document.getElementById("settingsServicesList");
@@ -23,6 +25,14 @@ const dbTargetEditorForm = document.getElementById("dbTargetEditorForm");
 const dbTargetsSyncBtn = document.getElementById("dbTargetsSyncBtn");
 const dbTargetsReloadBtn = document.getElementById("dbTargetsReloadBtn");
 const dbTargetNewBtn = document.getElementById("dbTargetNewBtn");
+const repositoriesSummary = document.getElementById("repositoriesSummary");
+const repositoriesList = document.getElementById("repositoriesList");
+const repositoryEditorMeta = document.getElementById("repositoryEditorMeta");
+const repositoryEditorForm = document.getElementById("repositoryEditorForm");
+const repositoriesFlash = document.getElementById("repositoriesFlash");
+const repositoriesApplyBtn = document.getElementById("repositoriesApplyBtn");
+const repositoriesReloadBtn = document.getElementById("repositoriesReloadBtn");
+const repositoryNewBtn = document.getElementById("repositoryNewBtn");
 const settingsPreferencesForm = document.getElementById("settingsPreferencesForm");
 const vaultStatusCard = document.getElementById("vaultStatusCard");
 const vaultControls = document.getElementById("vaultControls");
@@ -143,6 +153,7 @@ let dbTargetsState = {
   runtimeExportPath: "",
   runtime: null
 };
+let repositoriesState = { loading: false, error: "", items: [], selectedId: "", draft: null };
 let dashboardSettings = {
   preferences: {
     refresh_interval_sec: 5,
@@ -782,6 +793,7 @@ function createSummaryCard(label, value) {
 
 function setAdvancedTab(tabName) {
   if (tabName === "db-targets" && advancedServiceId !== "llm-sql-db-mcp") tabName = "options";
+  if (tabName === "repositories" && advancedServiceId !== "llm-bitbucket-mcp") tabName = "options";
   if (tabName !== "db-targets") {
     const password = document.getElementById("sqlPassword");
     if (password) password.value = "";
@@ -790,6 +802,7 @@ function setAdvancedTab(tabName) {
   const tabs = [
     { name: "options", button: tabOptionsBtn, view: advancedOptionsView, enabled: true },
     { name: "db-targets", button: tabDbTargetsBtn, view: advancedDbTargetsView, enabled: advancedServiceId === "llm-sql-db-mcp" },
+    { name: "repositories", button: tabRepositoriesBtn, view: advancedRepositoriesView, enabled: advancedServiceId === "llm-bitbucket-mcp" },
     { name: "logs", button: tabLogsBtn, view: advancedLogsView, enabled: true },
     {
       name: "inspector",
@@ -4164,6 +4177,108 @@ async function enableSelectedDbTarget() {
   }
 }
 
+function defaultRepositoryDraft() {
+  return { id: "", display_name: "", workspace: "", repo_slug: "", default_destination_branch: "", status: "active", is_default: false };
+}
+
+function setRepositoriesFlash(message, kind = "info") {
+  repositoriesFlash.className = `settings-flash ${kind}`;
+  repositoriesFlash.textContent = message;
+}
+
+function selectRepository(repositoryId) {
+  const repository = repositoriesState.items.find(item => item.id === repositoryId);
+  if (!repository) return;
+  repositoriesState.selectedId = repositoryId;
+  repositoriesState.draft = cloneValue(repository);
+  renderRepositoriesPanel();
+}
+
+function startNewRepository() {
+  repositoriesState.selectedId = "__new__";
+  repositoriesState.draft = defaultRepositoryDraft();
+  renderRepositoriesPanel();
+}
+
+async function loadRepositories() {
+  repositoriesState.loading = true;
+  repositoriesState.error = "";
+  try {
+    const payload = await apiJson("/api/bitbucket-repositories");
+    repositoriesState.items = Array.isArray(payload.repositories) ? payload.repositories : [];
+    if (repositoriesState.selectedId && repositoriesState.selectedId !== "__new__") {
+      const selected = repositoriesState.items.find(item => item.id === repositoriesState.selectedId);
+      repositoriesState.draft = selected ? cloneValue(selected) : null;
+    }
+    if (!repositoriesState.draft) {
+      if (repositoriesState.items.length) selectRepository(repositoriesState.items[0].id);
+      else startNewRepository();
+    }
+  } catch (error) {
+    repositoriesState.error = error.message;
+  } finally {
+    repositoriesState.loading = false;
+    renderRepositoriesPanel();
+  }
+}
+
+function renderRepositoriesPanel() {
+  if (!repositoriesSummary || !repositoriesList || !repositoryEditorForm) return;
+  repositoriesSummary.textContent = repositoriesState.error || `${repositoriesState.items.length} repository configurati`;
+  repositoriesList.innerHTML = "";
+  for (const repository of repositoriesState.items) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `db-target-card ${repositoriesState.selectedId === repository.id ? "active-card" : ""}`;
+    row.innerHTML = `<div class="db-target-card-header"><div><div class="db-target-card-title">${escapeHtml(repository.display_name || repository.id)}</div><div class="db-target-card-meta">${escapeHtml(repository.workspace)}/${escapeHtml(repository.repo_slug)}</div></div><div class="db-target-badge-row"><span class="db-target-badge ${repository.status === "active" ? "status-active" : "status-disabled"}">${escapeHtml(repository.status)}</span>${repository.is_default ? '<span class="db-target-badge status-runtime">default</span>' : ""}</div></div>`;
+    row.addEventListener("click", () => selectRepository(repository.id));
+    repositoriesList.appendChild(row);
+  }
+  const draft = repositoriesState.draft || defaultRepositoryDraft();
+  const selected = repositoriesState.selectedId && repositoriesState.selectedId !== "__new__";
+  repositoryEditorMeta.textContent = selected ? `Repository ${draft.id}` : "Nuovo repository Bitbucket";
+  repositoryEditorForm.innerHTML = `<div class="db-target-editor-section"><h4>Identità</h4><div class="db-target-field-grid">
+    <div class="db-target-field"><label>Repository ID</label><input data-repository-field="id" value="${escapeHtml(draft.id)}" ${selected ? "disabled" : ""} required></div>
+    <div class="db-target-field"><label>Display Name</label><input data-repository-field="display_name" value="${escapeHtml(draft.display_name)}"></div>
+    <div class="db-target-field"><label>Workspace</label><input data-repository-field="workspace" value="${escapeHtml(draft.workspace)}" required></div>
+    <div class="db-target-field"><label>Repository Slug</label><input data-repository-field="repo_slug" value="${escapeHtml(draft.repo_slug)}" required></div>
+    <div class="db-target-field"><label>Default Destination Branch</label><input data-repository-field="default_destination_branch" value="${escapeHtml(draft.default_destination_branch)}"></div>
+    <div class="db-target-field"><label>Status</label><select data-repository-field="status"><option value="active" ${draft.status === "active" ? "selected" : ""}>active</option><option value="disabled" ${draft.status === "disabled" ? "selected" : ""}>disabled</option></select></div>
+    <label class="settings-toggle"><input data-repository-field="is_default" type="checkbox" ${draft.is_default ? "checked" : ""}>Repository predefinito</label>
+  </div></div><div class="db-target-editor-actions"><button type="submit" class="btn-ok">${selected ? "Salva Repository" : "Crea Repository"}</button></div>`;
+  repositoryEditorForm.querySelectorAll("[data-repository-field]").forEach(input => input.addEventListener("change", event => {
+    const field = event.target.dataset.repositoryField;
+    repositoriesState.draft[field] = event.target.type === "checkbox" ? event.target.checked : event.target.value;
+  }));
+  repositoryEditorForm.onsubmit = saveRepository;
+}
+
+async function saveRepository(event) {
+  event.preventDefault();
+  const draft = cloneValue(repositoriesState.draft || defaultRepositoryDraft());
+  const selected = repositoriesState.selectedId && repositoriesState.selectedId !== "__new__";
+  try {
+    const response = await apiJson(selected ? `/api/bitbucket-repositories/${encodeURIComponent(repositoriesState.selectedId)}` : "/api/bitbucket-repositories", {
+      method: selected ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: draft })
+    });
+    repositoriesState.selectedId = response.repository.id;
+    repositoriesState.draft = cloneValue(response.repository);
+    setRepositoriesFlash(`Repository ${response.repository.id} salvato.`, "success");
+    await loadRepositories();
+  } catch (error) {
+    setRepositoriesFlash(error.message, "error");
+  }
+}
+
+async function applyRepositories() {
+  try {
+    const response = await apiJson("/api/bitbucket-repositories/runtime/apply", { method: "POST" });
+    setRepositoriesFlash(response.message, "success");
+  } catch (error) {
+    setRepositoriesFlash(error.message, "error");
+  }
+}
+
 async function loadServices() {
   services = (await apiJson("/api/services"))
     .map((service, index) => ({
@@ -4872,6 +4987,13 @@ tabDbTargetsBtn.addEventListener("click", async () => {
   await loadDbTargets();
   renderSqlConnectionPanel(true);
 });
+tabRepositoriesBtn?.addEventListener("click", async () => {
+  setAdvancedTab("repositories");
+  await loadRepositories();
+});
+repositoriesReloadBtn?.addEventListener("click", loadRepositories);
+repositoryNewBtn?.addEventListener("click", startNewRepository);
+repositoriesApplyBtn?.addEventListener("click", applyRepositories);
 settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
 settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
 dbTargetsSyncBtn?.addEventListener("click", () => syncDbTargetsRuntime());
