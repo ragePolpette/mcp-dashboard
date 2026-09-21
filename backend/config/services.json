@@ -597,36 +597,6 @@
             "secret": true,
             "required": true,
             "default": ""
-          },
-          {
-            "id": "bb_workspace",
-            "label": "Bitbucket Workspace",
-            "type": "string",
-            "env_var": "BITBUCKET_WORKSPACE",
-            "description": "Workspace Bitbucket Cloud da usare per il repository target.",
-            "secret": false,
-            "required": true,
-            "default": "studioboost"
-          },
-          {
-            "id": "bb_repo_slug",
-            "label": "Bitbucket Repository Slug",
-            "type": "string",
-            "env_var": "BITBUCKET_REPO_SLUG",
-            "description": "Repository slug Bitbucket Cloud da usare per il servizio.",
-            "secret": false,
-            "required": true,
-            "default": "bpopilot"
-          },
-          {
-            "id": "bb_default_destination_branch",
-            "label": "Default Destination Branch",
-            "type": "string",
-            "env_var": "BITBUCKET_DEFAULT_DESTINATION_BRANCH",
-            "description": "Branch target di default per create_pull_request. Se vuoto, il tool richiede destination_branch esplicito.",
-            "secret": false,
-            "required": false,
-            "default": ""
           }
         ]
       },
