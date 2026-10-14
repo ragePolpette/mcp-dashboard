@@ -284,6 +284,15 @@ class ServiceProcessManager:
     def _is_pid_running(self, pid: int | None) -> bool:
         if not pid:
             return False
+        if os.name != "nt":
+            # kill(pid, 0) also succeeds for a child that has already exited.
+            # Reap our children before reporting their state on POSIX.
+            try:
+                reaped_pid, _ = os.waitpid(pid, os.WNOHANG)
+                if reaped_pid == pid:
+                    return False
+            except (ChildProcessError, OSError):
+                pass
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
