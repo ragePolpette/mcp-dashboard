@@ -391,6 +391,19 @@ class DbTargetRegistry:
             source.get("allowed_tools"),
             fallback=DEFAULT_ALLOWED_TOOLS,
         )
+        existing_allowed_tools = _unique_text_list(
+            (existing or {}).get("allowed_tools"),
+            fallback=DEFAULT_ALLOWED_TOOLS,
+        )
+        write_policy_turned_on = (
+            write_policy == "allow" and policy_existing.get("write_policy") != "allow"
+        )
+        if (
+            write_policy_turned_on
+            and "db_write" not in allowed_tools
+            and allowed_tools == existing_allowed_tools
+        ):
+            allowed_tools = [*allowed_tools, "db_write"]
 
         state_existing = (existing or {}).get("state", {}) if isinstance((existing or {}).get("state"), dict) else {}
         state_raw = self._merge_section(source, existing or {}, "state")
@@ -413,9 +426,6 @@ class DbTargetRegistry:
             anonymization_mode = "off"
             anonymization_provider = "none"
             anonymization_model = ""
-
-        if write_policy == "deny" and "db_write" in allowed_tools:
-            allowed_tools = [tool for tool in allowed_tools if tool != "db_write"]
 
         return {
             "target_id": target_id,
