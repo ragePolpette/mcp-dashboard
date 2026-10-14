@@ -1,4 +1,4 @@
-# Any bytes and multi-target validation — 2026-09-18
+# Any bytes and multi-target validation - 2026-09-18
 
 Max Result Bytes accepts a positive integer or `Any`. The API and runtime export
 represent Any as JSON `null`; absent values retain the 131072-byte default.
