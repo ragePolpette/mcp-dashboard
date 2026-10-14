@@ -130,6 +130,8 @@ class BitbucketRepositoryRegistry:
 
     def runtime_env(self) -> dict[str, str]:
         with self._lock:
+            if not self._repositories:
+                return {}
             repositories = [
                 {
                     "id": item["id"],
