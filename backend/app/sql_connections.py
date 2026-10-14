@@ -6,7 +6,6 @@ import re
 from typing import Any
 
 
-
 def parse_connection_string(value: str) -> dict[str, str]:
     """Read standard SqlClient strings, including doubled quoted delimiters."""
     result: dict[str, str] = {}

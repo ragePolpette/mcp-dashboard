@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .fs_utils import atomic_write_json
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 from .sql_connections import validate_connection_string
 
@@ -34,8 +35,7 @@ def _read_json(path: Path) -> dict[str, Any] | None:
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+    atomic_write_json(path, payload)
 
 
 def _clean_text(value: Any, *, fallback: str = "") -> str:

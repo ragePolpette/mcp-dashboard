@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -13,7 +13,7 @@ from app.main import _compute_metrics  # noqa: E402
 
 
 def test_context_trend_uses_only_context_retrieval_events():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     entries = [
         {
             "timestamp": (now - timedelta(minutes=1)).isoformat(),

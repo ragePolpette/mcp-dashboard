@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -12,22 +13,24 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .alert_engine import AlertEngine
 from .bitbucket_repository_registry import BitbucketRepositoryRegistry
-from .db_target_registry import DbTargetRegistry
 from .dashboard_settings import DashboardSettingsManager
-from .log_pipeline import LogPipeline
+from .db_target_registry import DbTargetRegistry
+from .log_pipeline import LogPipeline, truncate_log_file
 from .log_rules import LogRuleEngine
 from .memory_admin_client import MemoryAdminClient, MemoryAdminProxyError
 from .process_manager import ServiceProcessManager
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
+from .security import REQUESTED_WITH_HEADER, REQUESTED_WITH_VALUE, DashboardSecurityMiddleware, SessionToken
 from .service_options import ServiceOptionsManager
 from .services_registry import ServiceRegistry
 from .sql_connections import read_connection_profile, save_connection_profile
+from .status_monitor import ServiceStatusMonitor
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = PROJECT_ROOT / "backend" / "config"
@@ -44,6 +47,10 @@ DB_TARGETS_STATE = RUNTIME_DIR / "db_targets.json"
 DB_TARGETS_RUNTIME_EXPORT = RUNTIME_DIR / "llm_sql_db_targets.runtime.json"
 DB_TARGETS_BOOTSTRAP = CONFIG_DIR / "db_targets.bootstrap.json"
 BITBUCKET_REPOSITORIES_STATE = RUNTIME_DIR / "bitbucket_repositories.json"
+SESSION_TOKEN_FILE = RUNTIME_DIR / "dashboard_session.token"
+STATUS_POLL_INTERVAL_ENV = "MCP_DASHBOARD_STATUS_POLL_SECONDS"
+DEFAULT_STATUS_POLL_SECONDS = 3.0
+SHUTDOWN_FALLBACK_SECONDS = 10.0
 
 registry = ServiceRegistry(SERVICES_CONFIG)
 rule_engine = LogRuleEngine(RULES_CONFIG)
@@ -62,16 +69,57 @@ db_target_registry = DbTargetRegistry(
     vault=vault_manager,
 )
 memory_admin_client = MemoryAdminClient()
+session_token = SessionToken()
+
+
+def _status_poll_interval() -> float:
+    try:
+        return float(os.environ.get(STATUS_POLL_INTERVAL_ENV, DEFAULT_STATUS_POLL_SECONDS))
+    except ValueError:
+        return DEFAULT_STATUS_POLL_SECONDS
+
+
+def _live_service_status(service) -> dict[str, Any]:
+    try:
+        return process_manager.status(service, env_overrides=_runtime_env_overrides(service))
+    except ValueError as exc:
+        status = process_manager.status(service)
+        status["last_error"] = str(exc)
+        return status
+
+
+status_monitor = ServiceStatusMonitor(
+    lambda service: _live_service_status(service),
+    lambda: registry.list_services(),
+    interval_seconds=_status_poll_interval(),
+)
+status_monitor.add_tick_hook(lambda: vault_manager.enforce_auto_lock())
+
+
+def _apply_vault_auto_lock(preferences: dict[str, Any]) -> None:
+    minutes = int(preferences.get("vault_auto_lock_minutes") or 0)
+    vault_manager.set_auto_lock_seconds(minutes * 60)
+
+
+_apply_vault_auto_lock(settings_manager.snapshot(registry.list_services())["preferences"])
 
 
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI):
-    retention_days = settings_manager.snapshot(registry.list_services())["preferences"]["log_retention_days"]
-    pipeline.prune_old_logs(registry.list_services(), retention_days=retention_days)
-    yield
+    preferences = settings_manager.snapshot(registry.list_services())["preferences"]
+    _apply_vault_auto_lock(preferences)
+    pipeline.prune_old_logs(registry.list_services(), retention_days=preferences["log_retention_days"])
+    session_token.write(SESSION_TOKEN_FILE)
+    status_monitor.start()
+    try:
+        yield
+    finally:
+        status_monitor.stop()
+        SessionToken.remove(SESSION_TOKEN_FILE)
 
 
 app = FastAPI(title="MCP Dashboard", version="0.3.0", lifespan=_app_lifespan)
+app.add_middleware(DashboardSecurityMiddleware, token=session_token)
 app.mount("/assets", StaticFiles(directory=FRONTEND_DIR), name="assets")
 
 
@@ -160,7 +208,7 @@ def _runtime_env_overrides(service) -> dict[str, str]:
 def _db_runtime_contract_payload() -> dict[str, Any]:
     runtime = db_target_registry.runtime_export_info()
     service = registry.get("llm-sql-db-mcp")
-    service_status = process_manager.status(service) if service is not None else None
+    service_status = status_monitor.get(service) if service is not None else None
     is_running = bool((service_status or {}).get("running"))
     return {
         **runtime,
@@ -210,12 +258,28 @@ def _apply_log_filters(
             continue
         if requested_event and entry_event != requested_event:
             continue
-        if requested_text:
-            haystack = json.dumps(entry, ensure_ascii=True).lower()
-            if requested_text not in haystack:
-                continue
+        if requested_text and not _entry_contains_text(entry, requested_text):
+            continue
         out.append(entry)
     return out
+
+
+def _entry_contains_text(entry: dict[str, Any], needle: str) -> bool:
+    nested: list[Any] = []
+    for value in entry.values():
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if needle in value.lower():
+                return True
+        elif isinstance(value, (dict, list, tuple)):
+            nested.append(value)
+        elif needle in str(value).lower():
+            return True
+    for value in nested:
+        if needle in json.dumps(value, ensure_ascii=False, default=str).lower():
+            return True
+    return False
 
 
 def _entries_newest_first(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -419,9 +483,7 @@ def _clear_service_logs(service) -> list[str]:
         if resolved in seen:
             continue
         seen.add(resolved)
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("", encoding="utf-8")
+        truncate_log_file(Path(path))
         cleared.append(resolved)
 
     return cleared
@@ -519,7 +581,7 @@ def _build_service_overview(
     alerts = alert_engine.evaluate(service_id=service.service_id, entries=entries, metrics=metrics)
     return {
         "service_id": service.service_id,
-        "runtime": process_manager.status(service),
+        "runtime": status_monitor.get(service),
         "metrics": metrics,
         "alerts": alerts,
         "entries": newest_entries[:recent_count],
@@ -595,6 +657,7 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
             if service.control is None:
                 continue
             result = process_manager.stop(service)
+            status_monitor.invalidate(service.service_id)
             stopped.append(
                 {
                     "service_id": service.service_id,
@@ -603,6 +666,7 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
                 }
             )
 
+    _apply_vault_auto_lock(after["preferences"])
     retention_days = int(after["preferences"]["log_retention_days"])
     pruned = pipeline.prune_old_logs(services, retention_days=retention_days)
 
@@ -615,9 +679,15 @@ def dashboard_settings_update(payload: DashboardSettingsUpdatePayload) -> dict[s
     }
 
 
+def _vault_payload() -> dict[str, Any]:
+    status = vault_manager.status()
+    ref_usage = _combined_secret_ref_usage() if status.get("unlocked") else {}
+    return {**status, "ref_usage": ref_usage}
+
+
 @app.get("/api/vault")
 def vault_status() -> dict[str, Any]:
-    return {**vault_manager.status(), "ref_usage": _combined_secret_ref_usage()}
+    return _vault_payload()
 
 
 @app.post("/api/vault/init")
@@ -650,7 +720,7 @@ def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
     return {
         "ok": True,
         "entry": entry,
-        "vault": {**vault_manager.status(), "ref_usage": _combined_secret_ref_usage()},
+        "vault": _vault_payload(),
     }
 
 
@@ -658,12 +728,12 @@ def vault_entry_upsert(payload: VaultEntryPayload) -> dict[str, Any]:
 def vault_entry_delete(ref: str = Query(..., min_length=1)) -> dict[str, Any]:
     try:
         vault_manager.delete_secret(ref)
-        status = vault_manager.status()
     except LocalSecretVaultError as exc:
-        raise HTTPException(status_code=400, detail=exc.message) from exc
+        status_code = 423 if exc.code == "E_VAULT_LOCKED" else 400
+        raise HTTPException(status_code=status_code, detail=exc.message) from exc
     return {
         "ok": True,
-        "vault": {**status, "ref_usage": _combined_secret_ref_usage()},
+        "vault": _vault_payload(),
     }
 
 
@@ -702,9 +772,10 @@ def apply_bitbucket_repositories() -> dict[str, Any]:
             missing.append("active Bitbucket repository")
         if missing:
             raise ValueError("Configura le opzioni richieste prima di applicare: " + ", ".join(missing))
-        current_status = process_manager.status(service)
+        current_status = process_manager.status(service, env_overrides=env)
         if current_status.get("running"):
             result = process_manager.restart(service, env_overrides=env)
+            status_monitor.invalidate(service.service_id)
             message = "Configurazione applicata al server Bitbucket."
         else:
             result = {"ok": True, "status": current_status}
@@ -755,7 +826,7 @@ async def db_target_connection_save(target_id: str, request: Request) -> dict[st
     try:
         payload = await request.json()
     except (ValueError, UnicodeDecodeError):
-        raise HTTPException(status_code=400, detail="Configurazione della connessione non valida.")
+        raise HTTPException(status_code=400, detail="Configurazione della connessione non valida.") from None
     try:
         return save_connection_profile(target, payload, vault_manager, db_target_registry)
     except ValueError as exc:
@@ -785,6 +856,7 @@ def db_targets_runtime_apply() -> dict[str, Any]:
             raise ValueError("Configura il salt di anonimizzazione nelle opzioni SQL prima di applicare PROD con anonimizzazione.")
         db_target_registry.sync_runtime()
         result = process_manager.restart(service, env_overrides=env)
+        status_monitor.invalidate(service.service_id)
         if not result.get("ok") or not (result.get("status") or {}).get("health_ok"):
             raise HTTPException(status_code=503, detail="Il server SQL non è pronto. Controlla i log del servizio nella dashboard.")
         return {"ok": True, "message": "Configurazione applicata al server SQL.", "status": result.get("status")}
@@ -839,9 +911,21 @@ def enable_db_target(target_id: str) -> dict[str, Any]:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
+def index() -> HTMLResponse:
     html_path = FRONTEND_DIR / "index.html"
-    return html_path.read_text(encoding="utf-8")
+    return HTMLResponse(html_path.read_text(encoding="utf-8"), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/session")
+def session_info(request: Request) -> JSONResponse:
+    # Same-origin pages can read this; cross-origin pages are blocked by the browser
+    # (no CORS headers) and DNS rebinding is blocked by the trusted host check.
+    if request.headers.get(REQUESTED_WITH_HEADER, "").strip().lower() != REQUESTED_WITH_VALUE:
+        raise HTTPException(status_code=403, detail=f"Missing X-Requested-With: {REQUESTED_WITH_VALUE} header.")
+    return JSONResponse(
+        {"token": session_token.value, "header": "X-Dashboard-Token"},
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/services")
@@ -884,12 +968,7 @@ def list_services() -> list[dict[str, Any]]:
 @app.get("/api/services/{service_id}/status")
 def service_status(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
-    try:
-        return process_manager.status(service, env_overrides=_runtime_env_overrides(service))
-    except ValueError as exc:
-        status = process_manager.status(service)
-        status["last_error"] = str(exc)
-        return status
+    return status_monitor.get(service)
 
 
 @app.get("/api/services/{service_id}/memory-admin/summary")
@@ -1025,12 +1104,42 @@ def service_memory_admin_apply_distillation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
-def _schedule_dashboard_shutdown(delay_seconds: float = 0.35) -> None:
+def _request_server_shutdown() -> None:
+    if os.name == "nt":
+        signal.raise_signal(signal.SIGINT)
+    else:
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
+def _schedule_dashboard_shutdown(
+    delay_seconds: float = 0.35,
+    *,
+    fallback_seconds: float = SHUTDOWN_FALLBACK_SECONDS,
+    request_shutdown=None,
+    force_exit=None,
+) -> threading.Thread:
+    """Ask uvicorn for a graceful shutdown so the lifespan cleanup runs.
+
+    The forced exit only fires if the server is still alive after the fallback
+    delay, for example when running under a host that ignores the signal.
+    """
+    request_shutdown = request_shutdown or _request_server_shutdown
+    force_exit = force_exit or os._exit
+
     def _shutdown() -> None:
         time.sleep(delay_seconds)
-        os._exit(0)
+        status_monitor.stop(timeout=1.0)
+        try:
+            request_shutdown()
+        except Exception:  # noqa: BLE001 - fall through to the forced exit
+            force_exit(0)
+            return
+        time.sleep(fallback_seconds)
+        force_exit(0)
 
-    threading.Thread(target=_shutdown, daemon=True).start()
+    thread = threading.Thread(target=_shutdown, name="dashboard-shutdown", daemon=True)
+    thread.start()
+    return thread
 
 
 @app.post("/api/control/kill-all")
@@ -1042,7 +1151,10 @@ def kill_all() -> dict[str, Any]:
         if service.control is None or service.service_id == "mcp-dashboard":
             continue
         try:
-            result = process_manager.stop(service)
+            try:
+                result = process_manager.stop(service)
+            finally:
+                status_monitor.invalidate(service.service_id)
             stopped.append(
                 {
                     "service_id": service.service_id,
@@ -1050,7 +1162,7 @@ def kill_all() -> dict[str, Any]:
                     "result": result.get("result"),
                 }
             )
-        except Exception as exc:  # pragma: no cover - defensive surface for control plane
+        except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive surface for control plane
             failed.append({"service_id": service.service_id, "error": str(exc)})
 
     _schedule_dashboard_shutdown()
@@ -1108,7 +1220,10 @@ def service_start(service_id: str) -> dict[str, Any]:
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
-        return process_manager.start(service, env_overrides=env_overrides)
+        try:
+            return process_manager.start(service, env_overrides=env_overrides)
+        finally:
+            status_monitor.invalidate(service_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1117,7 +1232,10 @@ def service_start(service_id: str) -> dict[str, Any]:
 def service_stop(service_id: str) -> dict[str, Any]:
     service = _service_or_404(service_id)
     try:
-        return process_manager.stop(service)
+        try:
+            return process_manager.stop(service)
+        finally:
+            status_monitor.invalidate(service_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1136,7 +1254,10 @@ def service_restart(service_id: str) -> dict[str, Any]:
         if missing_options:
             missing = ", ".join(missing_options)
             raise ValueError(f"Missing required options: {missing}")
-        return process_manager.restart(service, env_overrides=env_overrides)
+        try:
+            return process_manager.restart(service, env_overrides=env_overrides)
+        finally:
+            status_monitor.invalidate(service_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

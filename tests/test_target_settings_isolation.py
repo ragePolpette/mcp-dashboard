@@ -1,9 +1,11 @@
 """Synthetic persistence/export regression tests; no real vault or database."""
 import json
+
 import pytest
-from fastapi.testclient import TestClient
-from test_db_target_registry_api import _make_registry
+
 from app.main import app
+from dashboard_client import dashboard_client
+from test_db_target_registry_api import _make_registry
 
 
 def test_many_targets_flat_settings_persist_and_export(tmp_path):
@@ -29,7 +31,8 @@ def test_many_targets_flat_settings_persist_and_export(tmp_path):
     assert edited["allowed_tools"] == []
     assert edited["connection"]["vault_ref"] == "vault://synthetic.changed"
     other = registry.get_target(ids[1])
-    untouched.pop("state"); other.pop("state")
+    untouched.pop("state")
+    other.pop("state")
     assert other == untouched
     reloaded, _ = _make_registry(str(tmp_path))
     assert reloaded.get_target(ids[0])["limits"]["max_result_bytes"] is None
@@ -104,8 +107,8 @@ def test_duplicate_binding_and_invalid_limits_are_rejected(tmp_path):
 def test_api_any_roundtrip_and_neighbor_isolation(tmp_path, monkeypatch):
     registry, _ = _make_registry(str(tmp_path))
     monkeypatch.setattr("app.main.db_target_registry", registry)
-    monkeypatch.setattr("app.main.process_manager.status", lambda service: {"running": False})
-    client = TestClient(app)
+    monkeypatch.setattr("app.main.process_manager.status", lambda service, **_kwargs: {"running": False})
+    client = dashboard_client(app)
     for target_id in ("one", "two"):
         response = client.post("/api/db-targets", json={"values": {
             "target_id":target_id, "status":"disabled", "max_result_bytes":1024}})

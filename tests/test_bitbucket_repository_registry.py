@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-import tempfile
 import sys
+import tempfile
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.bitbucket_repository_registry import BitbucketRepositoryRegistry
+from app.bitbucket_repository_registry import BitbucketRepositoryRegistry  # noqa: E402
 
 
 def test_registry_supports_multiple_repositories_and_default():

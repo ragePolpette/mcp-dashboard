@@ -11,20 +11,32 @@ VAULT_MODULE_SRC = PROJECT_ROOT / "modules" / "local_secret_vault" / "src"
 if str(VAULT_MODULE_SRC) not in sys.path:
     sys.path.insert(0, str(VAULT_MODULE_SRC))
 
-from local_secret_vault import LocalSecretVault, LocalSecretVaultError, normalize_ref  # noqa: E402
+from local_secret_vault import LocalSecretVault, LocalSecretVaultError  # noqa: E402
 
 
 class DashboardSecretVault:
     """Thin adapter that keeps dashboard imports stable."""
 
-    def __init__(self, root_dir: Path):
+    def __init__(self, root_dir: Path, *, auto_lock_seconds: float | None = None):
         self.root_dir = Path(root_dir)
-        self._vault = LocalSecretVault(self.root_dir)
+        self._vault = LocalSecretVault(self.root_dir, auto_lock_seconds=auto_lock_seconds)
 
     def status(self) -> dict[str, Any]:
         payload = self._vault.status()
-        payload["entries"] = self._vault.list_entries() if payload["initialized"] else []
+        entries = self._vault.list_entries() if payload["initialized"] else []
+        if not payload["unlocked"]:
+            entries = [{"ref": entry["ref"], "name": entry["name"]} for entry in entries]
+        payload["entries"] = entries
         return payload
+
+    def is_unlocked(self) -> bool:
+        return self._vault.is_unlocked()
+
+    def set_auto_lock_seconds(self, seconds: float | None) -> None:
+        self._vault.set_auto_lock_seconds(seconds)
+
+    def enforce_auto_lock(self) -> bool:
+        return self._vault.enforce_auto_lock()
 
     def initialize(self, passphrase: str) -> dict[str, Any]:
         self._vault.initialize(passphrase)
@@ -51,7 +63,7 @@ class DashboardSecretVault:
         return self._vault.resolve_secret(ref)
 
     def normalize_ref(self, ref: str) -> str:
-        return normalize_ref(ref)
+        return self._vault.normalize_ref(ref)
 
 
 __all__ = ["DashboardSecretVault", "LocalSecretVaultError"]

@@ -162,7 +162,8 @@ let dashboardSettings = {
     service_order: "manual",
     show_alerts_in_home: true,
     log_retention_days: 15,
-    recent_rows_limit: 30
+    recent_rows_limit: 30,
+    vault_auto_lock_minutes: 30
   },
   service_visibility: {}
 };
@@ -178,7 +179,11 @@ let cardRenderTimer = null;
 let advancedQueryRefreshTimer = null;
 let advancedActivityRefreshTimer = null;
 let advancedMetricsAlertsTimer = null;
-const LOCAL_VAULT_REF_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
+const LOCAL_VAULT_REF_NAME_PATTERN = /^(?=.{1,128}$)[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/;
+const DASHBOARD_REQUESTED_WITH = "mcp-dashboard";
+const UNSAFE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+let dashboardSessionToken = "";
+let dashboardSessionTokenRequest = null;
 const stateByService = new Map();
 const statusByService = new Map();
 const optionsByService = new Map();
@@ -1835,9 +1840,9 @@ function renderAlertsForAdvanced(serviceId) {
     const li = document.createElement("li");
     const sev = String(item.severity || "warn").toLowerCase();
     li.innerHTML = `
-      <div><span class="alert-chip ${alertClass(sev)}">${alertLabel(sev)}</span> ${item.name || item.id}</div>
-      <div class="muted">Valore: ${item.current_value} ${item.op} soglia ${item.threshold}</div>
-      <div>${item.message || ""}</div>
+      <div><span class="alert-chip ${alertClass(sev)}">${alertLabel(sev)}</span> ${escapeHtml(item.name || item.id)}</div>
+      <div class="muted">Valore: ${escapeHtml(item.current_value)} ${escapeHtml(item.op)} soglia ${escapeHtml(item.threshold)}</div>
+      <div>${escapeHtml(item.message || "")}</div>
     `;
     frag.appendChild(li);
   }
@@ -2239,12 +2244,55 @@ function renderAdvancedEntriesForService(serviceId) {
   appendAdvancedEntries(entries);
 }
 
+async function fetchDashboardSessionToken(force = false) {
+  if (dashboardSessionToken && !force) {
+    return dashboardSessionToken;
+  }
+  if (!dashboardSessionTokenRequest || force) {
+    dashboardSessionTokenRequest = fetch("/api/session", {
+      headers: { "X-Requested-With": DASHBOARD_REQUESTED_WITH },
+      credentials: "same-origin",
+      cache: "no-store"
+    })
+      .then(async response => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.token) {
+          throw new Error(payload?.detail || `HTTP ${response.status}`);
+        }
+        dashboardSessionToken = String(payload.token);
+        return dashboardSessionToken;
+      })
+      .finally(() => {
+        dashboardSessionTokenRequest = null;
+      });
+  }
+  return dashboardSessionTokenRequest;
+}
+
+async function dashboardRequestOptions(options = undefined, forceToken = false) {
+  const merged = { ...(options || {}) };
+  const headers = new Headers(merged.headers || {});
+  headers.set("X-Requested-With", DASHBOARD_REQUESTED_WITH);
+  const method = String(merged.method || "GET").toUpperCase();
+  if (UNSAFE_HTTP_METHODS.has(method)) {
+    headers.set("X-Dashboard-Token", await fetchDashboardSessionToken(forceToken));
+  }
+  merged.headers = headers;
+  merged.credentials = "same-origin";
+  return merged;
+}
+
 async function apiJson(url, options = undefined) {
-  const response = await fetch(url, options);
-  const payload = await response.json().catch(() => ({}));
+  let response = await fetch(url, await dashboardRequestOptions(options));
+  let payload = await response.json().catch(() => ({}));
+  if (response.status === 403 && payload?.code === "csrf_token_invalid") {
+    // The dashboard restarted and issued a new session token: refresh it once.
+    response = await fetch(url, await dashboardRequestOptions(options, true));
+    payload = await response.json().catch(() => ({}));
+  }
   if (!response.ok) {
     const detail = payload?.detail || payload?.message || `HTTP ${response.status}`;
-    throw new Error(detail);
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
   }
   return payload;
 }
@@ -2688,6 +2736,7 @@ async function loadVaultState() {
     initialized: Boolean(payload.initialized),
     unlocked: Boolean(payload.unlocked),
     entry_count: Number(payload.entry_count || 0),
+    auto_lock_seconds: Number(payload.auto_lock_seconds || 0),
     entries: Array.isArray(payload.entries) ? payload.entries : [],
     ref_usage: payload.ref_usage && typeof payload.ref_usage === "object" ? payload.ref_usage : {}
   };
@@ -2720,10 +2769,10 @@ function renderSettingsFlash() {
   const tone = settingsFlashState.kind || "info";
   settingsFlash.className = `settings-flash settings-flash-${tone}`;
   const refBlock = settingsFlashState.ref
-    ? `<div class="settings-flash-ref"><code>${settingsFlashState.ref}</code><button type="button" data-settings-copy-ref="${settingsFlashState.ref}">Copia ref</button></div>`
+    ? `<div class="settings-flash-ref"><code>${escapeHtml(settingsFlashState.ref)}</code><button type="button" data-settings-copy-ref="${escapeHtml(settingsFlashState.ref)}">Copia ref</button></div>`
     : "";
   settingsFlash.innerHTML = `
-    <div class="settings-flash-message">${settingsFlashState.message}</div>
+    <div class="settings-flash-message">${escapeHtml(settingsFlashState.message)}</div>
     ${refBlock}
   `;
   const copyBtn = settingsFlash.querySelector("[data-settings-copy-ref]");
@@ -2770,6 +2819,17 @@ async function copyToClipboard(text) {
   document.body.removeChild(input);
 }
 
+function formatVaultRefUsage(item) {
+  if (item?.target_id) {
+    const field = item.field_id && item.field_id !== "connection" ? `.${item.field_id}` : "";
+    return `DB target ${item.target_id}${field}`;
+  }
+  if (item?.service_id && item?.option_id) {
+    return `${item.service_id}.${item.option_id}`;
+  }
+  return String(item?.service_id || item?.option_id || "n/d");
+}
+
 function renderVaultPanel() {
   vaultStatusCard.innerHTML = "";
   vaultControls.innerHTML = "";
@@ -2777,11 +2837,12 @@ function renderVaultPanel() {
 
   const statusBits = [
     `Stato: ${vaultState.initialized ? (vaultState.unlocked ? "Unlocked" : "Locked") : "Non inizializzato"}`,
-    `Secret salvati: ${vaultState.entry_count || 0}`
+    `Secret salvati: ${vaultState.entry_count || 0}`,
+    `Auto-lock: ${vaultState.auto_lock_seconds ? `${Math.round(vaultState.auto_lock_seconds / 60)} min` : "off"}`
   ];
   vaultStatusCard.innerHTML = `
     <div class="vault-status-title">Local Vault</div>
-    <div class="vault-status-meta">${statusBits.join(" | ")}</div>
+    <div class="vault-status-meta">${escapeHtml(statusBits.join(" | "))}</div>
     <div class="vault-status-hint">I secret restano cifrati su disco. Dopo un restart dashboard non devi reinserirli: basta sbloccare il vault e i riferimenti ${"`vault://...`"} tornano utilizzabili nelle opzioni MCP.</div>
   `;
 
@@ -2841,32 +2902,41 @@ function renderVaultPanel() {
     for (const entry of vaultState.entries) {
       const usage = Array.isArray(vaultState.ref_usage?.[entry.ref]) ? vaultState.ref_usage[entry.ref] : [];
       const usageText = usage.length
-        ? `Usato da ${usage.length} opzione${usage.length === 1 ? "" : "i"}: ${usage.map(item => `${item.service_id}.${item.option_id}`).join(", ")}`
+        ? `Usato da: ${usage.map(formatVaultRefUsage).join(", ")}`
         : "Non ancora referenziato da nessun servizio.";
       const row = document.createElement("div");
       row.className = "vault-entry-row";
-      row.innerHTML = `
+      row.innerHTML = vaultState.unlocked
+        ? `
         <div class="vault-entry-main">
-          <div class="vault-entry-ref">${entry.ref}</div>
-          <div class="vault-entry-meta">Aggiornato ${formatTimestamp(entry.updated_at) || "n/d"}</div>
-          <div class="vault-entry-usage">${usageText}</div>
+          <div class="vault-entry-ref">${escapeHtml(entry.ref)}</div>
+          <div class="vault-entry-meta">Aggiornato ${escapeHtml(formatTimestamp(entry.updated_at) || "n/d")}</div>
+          <div class="vault-entry-usage">${escapeHtml(usageText)}</div>
         </div>
         <div class="vault-entry-actions">
-          <button type="button" data-vault-copy="${entry.ref}">Copia ref</button>
-          <button type="button" data-vault-edit="${entry.ref}">Modifica</button>
-          <button type="button" class="btn-warn" data-vault-delete="${entry.ref}">Elimina</button>
+          <button type="button" data-vault-copy="${escapeHtml(entry.ref)}">Copia ref</button>
+          <button type="button" data-vault-edit="${escapeHtml(entry.ref)}">Modifica</button>
+          <button type="button" class="btn-warn" data-vault-delete="${escapeHtml(entry.ref)}">Elimina</button>
+        </div>
+      `
+        : `
+        <div class="vault-entry-main">
+          <div class="vault-entry-ref">${escapeHtml(entry.ref)}</div>
+        </div>
+        <div class="vault-entry-actions">
+          <button type="button" data-vault-copy="${escapeHtml(entry.ref)}">Copia ref</button>
         </div>
       `;
       row.querySelector("[data-vault-copy]").addEventListener("click", async () => {
         await copyToClipboard(entry.ref);
         setSettingsFlash("Ref copiato negli appunti.", "success", entry.ref);
       });
-      row.querySelector("[data-vault-edit]").addEventListener("click", () => {
+      row.querySelector("[data-vault-edit]")?.addEventListener("click", () => {
         vaultEditingRef = entry.ref;
         renderVaultPanel();
         document.getElementById("vaultEntryValue")?.focus();
       });
-      row.querySelector("[data-vault-delete]").addEventListener("click", () => deleteVaultEntry(entry.ref));
+      row.querySelector("[data-vault-delete]")?.addEventListener("click", () => deleteVaultEntry(entry.ref));
       list.appendChild(row);
     }
   }
@@ -2952,9 +3022,10 @@ async function saveVaultEntry() {
     return;
   }
   const normalizedCandidate = ref.trim().startsWith("vault://") ? ref.trim().slice("vault://".length).trim() : ref.trim();
-  if (!LOCAL_VAULT_REF_NAME_PATTERN.test(normalizedCandidate)) {
+  const isExistingRef = vaultState.entries.some(entry => entry.ref === `vault://${normalizedCandidate}`);
+  if (!isExistingRef && !LOCAL_VAULT_REF_NAME_PATTERN.test(normalizedCandidate)) {
     setSettingsFlash(
-      "Nome ref non valido. Usa solo lettere, numeri, punto, underscore, slash, due punti o trattino; niente spazi. Esempio: db.prod.connection_string",
+      "Invalid vault reference name. Use letters, digits, underscore or hyphen, with single dots as separators; no spaces, slashes or colons. Example: db.prod.connection_string",
       "error"
     );
     return;
@@ -2969,6 +3040,7 @@ async function saveVaultEntry() {
       initialized: Boolean(payload.vault?.initialized),
       unlocked: Boolean(payload.vault?.unlocked),
       entry_count: Number(payload.vault?.entry_count || 0),
+      auto_lock_seconds: Number(payload.vault?.auto_lock_seconds || 0),
       entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : vaultState.entries,
       ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
     };
@@ -2994,7 +3066,7 @@ async function saveVaultEntry() {
 
 async function deleteVaultEntry(ref) {
   const usage = Array.isArray(vaultState.ref_usage?.[ref]) ? vaultState.ref_usage[ref] : [];
-  const suffix = usage.length ? `\n\nAttenzione: il ref e' usato da ${usage.map(item => `${item.service_id}.${item.option_id}`).join(", ")}` : "";
+  const suffix = usage.length ? `\n\nAttenzione: il ref e' usato da ${usage.map(formatVaultRefUsage).join(", ")}` : "";
   if (!window.confirm(`Eliminare ${ref} dal Local Vault?${suffix}`)) {
     return;
   }
@@ -3004,6 +3076,7 @@ async function deleteVaultEntry(ref) {
       initialized: Boolean(payload.vault?.initialized),
       unlocked: Boolean(payload.vault?.unlocked),
       entry_count: Number(payload.vault?.entry_count || 0),
+      auto_lock_seconds: Number(payload.vault?.auto_lock_seconds || 0),
       entries: Array.isArray(payload.vault?.entries) ? payload.vault.entries : [],
       ref_usage: payload.vault?.ref_usage && typeof payload.vault.ref_usage === "object" ? payload.vault.ref_usage : {}
     };
@@ -3032,8 +3105,8 @@ function renderSettingsPanel() {
     row.innerHTML = `
       <div class="settings-row-head">
         <div>
-          <div class="settings-row-title">${service.name}</div>
-          <div class="settings-row-meta">${serviceGroupLabel(service)} | ${service.control?.port ? `Port ${service.control.port}` : "Port n/d"}</div>
+          <div class="settings-row-title">${escapeHtml(service.name)}</div>
+          <div class="settings-row-meta">${escapeHtml(serviceGroupLabel(service))} | ${service.control?.port ? `Port ${escapeHtml(service.control.port)}` : "Port n/d"}</div>
         </div>
       </div>
     `;
@@ -3111,6 +3184,20 @@ function renderSettingsPanel() {
       label: "Massimo righe recenti in UI",
       type: "integer",
       hint: "Numero di righe recenti caricate nella home e nello stream live."
+    },
+    {
+      id: "vault_auto_lock_minutes",
+      label: "Vault auto-lock",
+      type: "select",
+      options: [
+        { value: "0", label: "Off" },
+        { value: "5", label: "5 min" },
+        { value: "15", label: "15 min" },
+        { value: "30", label: "30 min" },
+        { value: "60", label: "60 min" },
+        { value: "120", label: "120 min" }
+      ],
+      hint: "Locks the Local Vault after this many minutes without vault activity."
     }
   ];
 
@@ -3145,6 +3232,13 @@ function renderSettingsPanel() {
         if (String(current ?? "") === optionDef.value) {
           option.selected = true;
         }
+        input.appendChild(option);
+      }
+      if (current !== null && current !== undefined && !definition.options.some(optionDef => optionDef.value === String(current))) {
+        const option = document.createElement("option");
+        option.value = String(current);
+        option.textContent = String(current);
+        option.selected = true;
         input.appendChild(option);
       }
     }
@@ -3328,8 +3422,8 @@ function renderCards() {
       Number(alertPayload.triggered_count || 0) > 0;
     head.innerHTML = `
       <div>
-        <div class="widget-eyebrow">${serviceGroupLabel(service)}</div>
-        <div class="widget-title">${service.name}</div>
+        <div class="widget-eyebrow">${escapeHtml(serviceGroupLabel(service))}</div>
+        <div class="widget-title">${escapeHtml(service.name)}</div>
       </div>
       <div class="status">
         <span class="dot ${runtimeDotClass(runtime, state)}"></span><span>${runtimeLabel(runtime, state)}</span>
@@ -5115,7 +5209,7 @@ async function boot() {
 }
 
 boot().catch(err => {
-  widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${err.message}</div></article>`;
+  widgetGrid.innerHTML = `<article class="widget-card"><div class="widget-title">Errore</div><div class="widget-meta">${escapeHtml(err.message)}</div></article>`;
 });
 
 

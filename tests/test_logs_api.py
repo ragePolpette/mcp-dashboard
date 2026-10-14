@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
-import sys
 
-from fastapi.testclient import TestClient
+from dashboard_client import dashboard_client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
+from app.log_pipeline import LogPipeline  # noqa: E402
+from app.log_rules import LogRuleEngine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.memory_admin_client import MemoryAdminProxyError  # noqa: E402
 from app.models import ServiceControlDefinition, ServiceDefinition, ServiceLogSource  # noqa: E402
-from app.log_pipeline import LogPipeline  # noqa: E402
-from app.log_rules import LogRuleEngine  # noqa: E402
 
 
 def test_logs_endpoint_returns_newest_first(monkeypatch):
@@ -33,7 +33,7 @@ def test_logs_endpoint_returns_newest_first(monkeypatch):
     monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
     monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=200: entries)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/svc-logs/logs")
 
     assert response.status_code == 200
@@ -55,7 +55,7 @@ def test_services_endpoint_includes_kind_group_and_capabilities(monkeypatch):
 
     monkeypatch.setattr("app.main.registry.list_services", lambda: services)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services")
 
     assert response.status_code == 200
@@ -88,7 +88,7 @@ def test_memory_admin_summary_proxy_returns_downstream_payload(monkeypatch):
         lambda _service: {"status": "ok", "summary": {"counts": {"active_entries": 3}}},
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-memory/memory-admin/summary")
 
     assert response.status_code == 200
@@ -118,7 +118,7 @@ def test_memory_admin_audit_proxy_forwards_filters(monkeypatch):
     monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
     monkeypatch.setattr("app.main.memory_admin_client.get_audit", fake_get_audit)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get(
         "/api/services/llm-memory/memory-admin/audit"
         "?limit=25&action=export&actor=agent-a&reason=manual&since=2026-03-26T10:00:00Z"
@@ -158,7 +158,7 @@ def test_memory_admin_projects_proxy_maps_proxy_errors(monkeypatch):
         ),
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-memory/memory-admin/projects?limit=20")
 
     assert response.status_code == 502
@@ -192,7 +192,7 @@ def test_memory_admin_candidates_proxy_forwards_filters(monkeypatch):
     monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
     monkeypatch.setattr("app.main.memory_admin_client.get_candidates", fake_get_candidates)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get(
         "/api/services/llm-memory/memory-admin/candidates"
         "?limit=15&workspace_id=ws-a&project_id=prj-a&include_resolved=true&distillation_status=pending"
@@ -231,7 +231,7 @@ def test_memory_admin_candidates_proxy_maps_proxy_errors(monkeypatch):
         ),
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-memory/memory-admin/candidates?limit=10")
 
     assert response.status_code == 502
@@ -265,7 +265,7 @@ def test_memory_admin_distillation_runs_proxy_forwards_filters(monkeypatch):
     monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
     monkeypatch.setattr("app.main.memory_admin_client.get_distillation_runs", fake_get_runs)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get(
         "/api/services/llm-memory/memory-admin/distillation/runs"
         "?limit=25&workspace_id=ws-a&project_id=prj-a&agent_id=agent-a&status=reviewed"
@@ -302,7 +302,7 @@ def test_memory_admin_distillation_run_proxy_returns_detail(monkeypatch):
         lambda _service, run_id: {"status": "ok", "run": {"id": run_id, "status": "applied"}},
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-memory/memory-admin/distillation/runs/run-42")
 
     assert response.status_code == 200
@@ -333,7 +333,7 @@ def test_memory_admin_prepare_distillation_proxy_forwards_payload(monkeypatch):
     monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
     monkeypatch.setattr("app.main.memory_admin_client.prepare_distillation", fake_prepare)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.post(
         "/api/services/llm-memory/memory-admin/distillation/prepare",
         json={
@@ -375,7 +375,7 @@ def test_memory_admin_apply_distillation_proxy_forwards_run_id(monkeypatch):
     monkeypatch.setattr("app.main._memory_admin_service_or_400", lambda _service_id: service)
     monkeypatch.setattr("app.main.memory_admin_client.apply_distillation", fake_apply)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.post(
         "/api/services/llm-memory/memory-admin/distillation/apply",
         json={
@@ -416,7 +416,7 @@ def test_memory_admin_apply_distillation_proxy_maps_proxy_errors(monkeypatch):
         ),
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.post(
         "/api/services/llm-memory/memory-admin/distillation/apply",
         json={
@@ -459,14 +459,14 @@ def test_dashboard_overview_returns_runtime_logs_metrics_and_alerts(monkeypatch)
     monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
     monkeypatch.setattr(
         "app.main.process_manager.status",
-        lambda _service: {"running": True, "health_ok": True, "pid": 1234, "port": 9999},
+        lambda _service, **_kwargs: {"running": True, "health_ok": True, "pid": 1234, "port": 9999},
     )
     monkeypatch.setattr(
         "app.main.alert_engine.evaluate",
         lambda **_kwargs: {"status": "ok", "triggered_count": 0, "triggered": []},
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/dashboard/overview")
 
     assert response.status_code == 200
@@ -518,7 +518,7 @@ def test_queries_endpoint_supports_query_in_query_out(monkeypatch):
     monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
     monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/svc-db/queries")
 
     assert response.status_code == 200
@@ -567,7 +567,7 @@ def test_activity_endpoint_supports_bitbucket_api_calls(monkeypatch):
     monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
     monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-bitbucket-mcp/activity")
 
     assert response.status_code == 200
@@ -603,7 +603,7 @@ def test_clear_logs_truncates_service_log_files(monkeypatch):
 
         monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
 
-        client = TestClient(app)
+        client = dashboard_client(app)
         response = client.post("/api/services/svc-clear/logs/clear")
 
         assert response.status_code == 200
@@ -720,7 +720,7 @@ def test_mcp_activity_endpoint_builds_read_write_rows(monkeypatch):
     monkeypatch.setattr("app.main._service_or_404", lambda _service_id: service)
     monkeypatch.setattr("app.main.pipeline.read_tail", lambda _service, tail=2000: entries)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/services/llm-memory/activity")
 
     assert response.status_code == 200
@@ -764,7 +764,7 @@ def test_mcp_activity_parser_reads_embedded_payload():
 def test_dashboard_status_reports_pid(monkeypatch):
     monkeypatch.setattr("app.main.os.getpid", lambda: 4242)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/dashboard/status")
 
     assert response.status_code == 200
@@ -799,7 +799,7 @@ def test_kill_all_stops_services_and_schedules_dashboard_shutdown(monkeypatch):
     monkeypatch.setattr("app.main._schedule_dashboard_shutdown", lambda delay_seconds=0.35: scheduled.append(delay_seconds))
     monkeypatch.setattr("app.main.os.getpid", lambda: 9001)
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.post("/api/control/kill-all")
 
     assert response.status_code == 200
@@ -839,7 +839,7 @@ def test_settings_endpoint_returns_preferences_and_visibility(monkeypatch):
         },
     )
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.get("/api/settings")
 
     assert response.status_code == 200
@@ -904,7 +904,7 @@ def test_settings_update_stops_newly_hidden_services_and_prunes_logs(monkeypatch
     )
     monkeypatch.setattr("app.main.pipeline.prune_old_logs", lambda _services, retention_days=15: ["ctx.log"])
 
-    client = TestClient(app)
+    client = dashboard_client(app)
     response = client.post(
         "/api/settings",
         json={

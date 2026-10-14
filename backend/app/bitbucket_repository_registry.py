@@ -9,6 +9,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .fs_utils import atomic_write_json
+
 
 def _parse_bool(value: Any, default: bool = False) -> bool:
     if value is None:
@@ -50,13 +52,12 @@ class BitbucketRepositoryRegistry:
         self._default_repository_id = default_id if self._active(default_id) else ""
 
     def _save(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "version": 1,
             "default_repository_id": self._default_repository_id,
             "repositories": self._repositories,
         }
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        atomic_write_json(self.state_path, payload)
 
     def _normalize(self, raw: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
         source = copy.deepcopy(existing or {})

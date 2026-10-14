@@ -5,8 +5,8 @@ from __future__ import annotations
 import base64
 import os
 
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from .errors import LocalSecretVaultError
 
@@ -60,7 +60,7 @@ def create_key_envelope(passphrase: str) -> tuple[dict[str, str | int], bytes]:
     dek = os.urandom(KEY_BYTES)
     salt = os.urandom(16)
     kek = derive_kek(passphrase, salt)
-    aad = f"local-secret-vault:kek:v{STORE_VERSION}".encode("utf-8")
+    aad = f"local-secret-vault:kek:v{STORE_VERSION}".encode()
     wrapped = _aes_encrypt(kek, dek, aad)
     envelope = {
         "version": STORE_VERSION,
@@ -77,7 +77,7 @@ def unwrap_dek(passphrase: str, envelope: dict[str, str | int]) -> bytes:
         raise LocalSecretVaultError("E_STORE_CORRUPT", "Secret vault metadata is invalid or unsupported.")
     salt = _unb64(str(envelope["salt"]))
     kek = derive_kek(passphrase, salt)
-    aad = f"local-secret-vault:kek:v{STORE_VERSION}".encode("utf-8")
+    aad = f"local-secret-vault:kek:v{STORE_VERSION}".encode()
     return _aes_decrypt(
         kek,
         _unb64(str(envelope["nonce"])),
@@ -87,7 +87,7 @@ def unwrap_dek(passphrase: str, envelope: dict[str, str | int]) -> bytes:
 
 
 def encrypt_secret(dek: bytes, plaintext: str, ref: str) -> bytes:
-    aad = f"local-secret-vault:secret:{ref}".encode("utf-8")
+    aad = f"local-secret-vault:secret:{ref}".encode()
     encrypted = _aes_encrypt(dek, plaintext.encode("utf-8"), aad)
     return encrypted["nonce"] + encrypted["ciphertext"]
 
@@ -97,6 +97,6 @@ def decrypt_secret(dek: bytes, payload: bytes, ref: str) -> str:
         raise LocalSecretVaultError("E_STORE_CORRUPT", "Secret ciphertext is missing or corrupted.")
     nonce = payload[:NONCE_BYTES]
     ciphertext = payload[NONCE_BYTES:]
-    aad = f"local-secret-vault:secret:{ref}".encode("utf-8")
+    aad = f"local-secret-vault:secret:{ref}".encode()
     return _aes_decrypt(dek, nonce, ciphertext, aad).decode("utf-8")
 
