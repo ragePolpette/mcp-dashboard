@@ -41,6 +41,51 @@ def test_many_targets_flat_settings_persist_and_export(tmp_path):
     assert reloaded.get_target(ids[1]) is not None
 
 
+def test_write_policy_toggle_keeps_db_write_per_target(tmp_path):
+    registry, _ = _make_registry(str(tmp_path))
+    for target_id in ("alpha", "beta"):
+        registry.create_target({"target_id": target_id, "environment": "dev", "status": "active",
+                                "write_policy": "allow", "connection_vault_ref": f"vault://synthetic.{target_id}"})
+    for target_id in ("alpha", "beta"):
+        assert "db_write" in registry.get_target(target_id)["allowed_tools"]
+        assert "db_write" in registry.get_target(target_id)["runtime"]["allowed_tools"]
+
+    denied = registry.update_target("alpha", {"write_policy": "deny"})
+    assert denied["policy"]["write_policy"] == "deny"
+    assert "db_write" in denied["allowed_tools"]
+    assert "db_write" not in denied["runtime"]["allowed_tools"]
+
+    beta = registry.get_target("beta")
+    assert beta["policy"]["write_policy"] == "allow"
+    assert "db_write" in beta["runtime"]["allowed_tools"]
+    exported = {t["target_id"]: t for t in json.loads(registry.runtime_path.read_text())["targets"]}
+    assert exported["alpha"]["write_enabled"] is False
+    assert "db_write" not in exported["alpha"]["allowed_tools"]
+    assert exported["beta"]["write_enabled"] is True
+    assert "db_write" in exported["beta"]["allowed_tools"]
+
+    restored = registry.update_target("alpha", {"write_policy": "allow"})
+    assert "db_write" in restored["runtime"]["allowed_tools"]
+    exported = {t["target_id"]: t for t in json.loads(registry.runtime_path.read_text())["targets"]}
+    assert exported["alpha"]["write_enabled"] is True
+    assert "db_write" in exported["alpha"]["allowed_tools"]
+
+
+def test_write_policy_allow_repairs_targets_stripped_by_previous_versions(tmp_path):
+    registry, _ = _make_registry(str(tmp_path))
+    registry.create_target({"target_id": "legacy", "environment": "dev", "status": "active",
+                            "write_policy": "deny", "connection_vault_ref": "vault://synthetic.legacy",
+                            "allowed_tools": ["db_target_info", "db_policy_info", "db_read"]})
+    stale_echo = registry.get_target("legacy")["allowed_tools"]
+    repaired = registry.update_target("legacy", {"write_policy": "allow", "allowed_tools": stale_echo})
+    assert "db_write" in repaired["allowed_tools"]
+    assert "db_write" in repaired["runtime"]["allowed_tools"]
+
+    explicit = registry.update_target("legacy", {"write_policy": "deny"})
+    explicit = registry.update_target("legacy", {"write_policy": "allow", "allowed_tools": ["db_read"]})
+    assert explicit["allowed_tools"] == ["db_read"]
+
+
 def test_duplicate_binding_and_invalid_limits_are_rejected(tmp_path):
     registry, _ = _make_registry(str(tmp_path))
     target = registry.create_target({"target_id": "one"})

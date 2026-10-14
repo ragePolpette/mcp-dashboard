@@ -4012,8 +4012,8 @@ function renderDbTargetsPanel() {
         </div>
         <div class="db-target-field">
           <label>Allowed Tools</label>
-          <div class="db-target-inline-hint">Seleziona gli strumenti che questo target può esporre.</div>
-          ${DB_TARGET_TOOL_OPTIONS.map(tool => `<label class="settings-toggle"><input data-db-target-tool="${tool}" type="checkbox" ${draft.allowed_tools.includes(tool) ? "checked" : ""}>${tool}</label>`).join("")}
+          <div class="db-target-inline-hint">Seleziona gli strumenti che questo target può esporre. db_write è attivo solo con Write Policy = allow.</div>
+          ${DB_TARGET_TOOL_OPTIONS.map(tool => `<label class="settings-toggle"><input data-db-target-tool="${tool}" type="checkbox" ${draft.allowed_tools.includes(tool) ? "checked" : ""}>${tool}${tool === "db_write" && draft.write_policy !== "allow" ? " (inattivo: policy non allow)" : ""}</label>`).join("")}
         </div>
       </div>
     </div>
@@ -4090,6 +4090,9 @@ function handleDbTargetDraftChange(event) {
 
   if (field === "write_policy") {
     draft.write_enabled = String(event.target.value || "").trim().toLowerCase() === "allow";
+    if (draft.write_enabled && !normalizeDbTargetAllowedTools(draft.allowed_tools).includes("db_write")) {
+      draft.allowed_tools = [...normalizeDbTargetAllowedTools(draft.allowed_tools), "db_write"];
+    }
   }
 
   setDbTargetDraft(draft);
