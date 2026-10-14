@@ -8,8 +8,10 @@ This policy covers the code in this repository: the FastAPI backend, the browser
 
 The dashboard is a local operator tool.
 
-- The backend has no API authentication. Anyone who can reach its port can start and stop configured services and call the admin endpoints. Run it bound to `127.0.0.1` (the default in `start-dashboard.ps1`) and do not expose it to a network.
-- Secrets are stored in a local vault under `runtime/vault`. Keys are derived with scrypt and values are encrypted with AES-GCM. The vault must be unlocked with a passphrase before secrets can be resolved.
+- The backend has no user authentication. Anyone who can reach its port can obtain the session token and then start and stop configured services and call the admin endpoints. Run it bound to `127.0.0.1` (the default in `start-dashboard.ps1`) and do not expose it to a network without an authenticating reverse proxy.
+- Browser-based attacks from other sites are mitigated: the `Host` header must be in an allow-list (loopback by default, see `MCP_DASHBOARD_ALLOWED_HOSTS`), and state-changing requests need a same-origin `Origin`/`Referer` when present, the `X-Requested-With: mcp-dashboard` header and the per-process session token in `X-Dashboard-Token`.
+- Secrets are stored in a local vault under `runtime/vault`. Keys are derived with scrypt and values are encrypted with AES-GCM. Vault files are written atomically with mode `0600`. The vault must be unlocked with a passphrase before secrets can be resolved, and it locks itself again after the configured idle timeout (30 minutes by default).
+- Vault reference names cannot contain path separators, colons or `..`, and every ciphertext path is checked to stay inside the vault store.
 - Secrets are passed to managed services as environment variables when they start. Locking the vault does not remove them from already running processes. Stop the service to clear them.
 - The UI and API do not return stored secret values in cleartext.
 - Services are launched from commands defined in `backend/config/services.json`. Treat that file as trusted input.

@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import os
 import threading
-from datetime import datetime
+from collections.abc import AsyncIterator, Callable
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator
 
 from .log_parsers import parse_with_chain
 from .log_rules import LogRuleEngine
@@ -47,6 +47,41 @@ def _tail_lines(path: Path, tail: int) -> list[str]:
         return []
 
     return buffer.decode("utf-8", errors="replace").splitlines()[-tail:]
+
+
+def compact_log_file(path: Path, keep: Callable[[str], bool]) -> bool:
+    """Drop lines rejected by ``keep`` from path, rewriting it in place.
+
+    The file is streamed line by line through a reader and a trailing writer on
+    the same inode, then truncated, so memory stays bounded and a child process
+    that holds the file open in append mode keeps writing to the same file.
+    Returns True when at least one line was removed.
+    """
+    changed = False
+    with path.open("rb") as reader, path.open("r+b") as writer:
+        while True:
+            raw = reader.readline()
+            if not raw:
+                break
+            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+            if keep(line):
+                if changed:
+                    writer.write(raw)
+                else:
+                    writer.seek(reader.tell())
+            else:
+                changed = True
+        if changed:
+            writer.flush()
+            writer.truncate(writer.tell())
+    return changed
+
+
+def truncate_log_file(path: Path) -> None:
+    """Empty a log file in place, creating it when missing, without replacing the inode."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("ab") as handle:
+        handle.truncate(0)
 
 
 class LogPipeline:
@@ -98,43 +133,21 @@ class LogPipeline:
         if not path.exists():
             return False
 
-        try:
-            raw_text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return False
-
-        if not raw_text:
-            return False
-
-        lines = raw_text.splitlines()
-        kept: list[str] = []
         last_keep = True
-        changed = False
 
-        for line in lines:
+        def keep(line: str) -> bool:
+            nonlocal last_keep
             parsed = self.parse_line(service=service, source=source, line=line, fallback_timestamp=None)
             parsed_epoch = self._timestamp_to_epoch(parsed.timestamp)
             if parsed_epoch is None:
-                keep_line = last_keep
-            else:
-                keep_line = parsed_epoch >= cutoff_epoch
-                last_keep = keep_line
-            if keep_line:
-                kept.append(line)
-            else:
-                changed = True
+                return last_keep
+            last_keep = parsed_epoch >= cutoff_epoch
+            return last_keep
 
-        if not changed:
-            return False
-
-        out_text = "\n".join(kept)
-        if raw_text.endswith(("\n", "\r")) and out_text:
-            out_text += "\n"
         try:
-            path.write_text(out_text, encoding="utf-8")
+            return compact_log_file(path, keep)
         except OSError:
             return False
-        return True
 
     @staticmethod
     def _timestamp_to_epoch(value: str | None) -> float | None:
@@ -203,6 +216,42 @@ class LogPipeline:
             }
         return entries
 
+    def _read_new_lines(
+        self,
+        service: ServiceDefinition,
+        offsets: dict[str, int],
+    ) -> list[tuple[ServiceLogSource, str]]:
+        out: list[tuple[ServiceLogSource, str]] = []
+        for source in service.log_sources:
+            source_key = str(source.path)
+            current_offset = offsets.get(source_key, 0)
+            try:
+                size = source.path.stat().st_size
+            except FileNotFoundError:
+                offsets[source_key] = 0
+                continue
+            except OSError:
+                continue
+            if size < current_offset:
+                current_offset = 0
+            if size == current_offset:
+                offsets[source_key] = current_offset
+                continue
+            try:
+                with source.path.open("rb") as handle:
+                    handle.seek(current_offset, os.SEEK_SET)
+                    chunk = handle.read(size - current_offset)
+            except OSError:
+                continue
+            complete = chunk.rfind(b"\n") + 1
+            if complete == 0:
+                offsets[source_key] = current_offset
+                continue
+            offsets[source_key] = current_offset + complete
+            text = chunk[:complete].decode("utf-8", errors="replace")
+            out.extend((source, line) for line in text.splitlines())
+        return out
+
     async def stream_entries(self, service: ServiceDefinition, poll_seconds: float = 0.5) -> AsyncIterator[dict]:
         offsets: dict[str, int] = {}
         for source in service.log_sources:
@@ -212,43 +261,16 @@ class LogPipeline:
                 offsets[str(source.path)] = 0
 
         while True:
-            has_output = False
-            for source in service.log_sources:
-                source_key = str(source.path)
-                current_offset = offsets.get(source_key, 0)
-                if not source.path.exists():
-                    offsets[source_key] = 0
-                    continue
-                try:
-                    size = source.path.stat().st_size
-                except OSError:
-                    continue
-                if size < current_offset:
-                    current_offset = 0
-
-                if size == current_offset:
-                    offsets[source_key] = current_offset
-                    continue
-
-                try:
-                    with source.path.open("r", encoding="utf-8", errors="replace") as handle:
-                        handle.seek(current_offset, os.SEEK_SET)
-                        chunk = handle.read()
-                        offsets[source_key] = handle.tell()
-                except OSError:
-                    continue
-
-                fallback_timestamp = datetime.now().astimezone().isoformat()
-                for line in chunk.splitlines():
-                    parsed = self.parse_line(
-                        service=service,
-                        source=source,
-                        line=line,
-                        fallback_timestamp=fallback_timestamp,
-                    )
-                    has_output = True
-                    yield asdict(parsed)
-
-            if not has_output:
+            new_lines = await asyncio.to_thread(self._read_new_lines, service, offsets)
+            if not new_lines:
                 await asyncio.sleep(poll_seconds)
-
+                continue
+            fallback_timestamp = datetime.now().astimezone().isoformat()
+            for source, line in new_lines:
+                parsed = self.parse_line(
+                    service=service,
+                    source=source,
+                    line=line,
+                    fallback_timestamp=fallback_timestamp,
+                )
+                yield asdict(parsed)

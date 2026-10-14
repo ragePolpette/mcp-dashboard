@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import signal
@@ -9,13 +10,14 @@ import socket
 import subprocess
 import threading
 import time
-import http.client
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from .models import ServiceControlDefinition, ServiceDefinition
+
+PORT_LOOKUP_TIMEOUT_SECONDS = 5
 
 
 @dataclass(slots=True)
@@ -36,13 +38,15 @@ class ServiceProcessManager:
 
     def __init__(self) -> None:
         self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
 
     def _lock_for(self, service_id: str) -> threading.Lock:
-        lock = self._locks.get(service_id)
-        if lock is None:
-            lock = threading.Lock()
-            self._locks[service_id] = lock
-        return lock
+        with self._locks_guard:
+            lock = self._locks.get(service_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[service_id] = lock
+            return lock
 
     def status(
         self,
@@ -333,18 +337,20 @@ class ServiceProcessManager:
         except OSError:
             return False
 
+    @staticmethod
+    def _run_port_lookup(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(command, capture_output=True, text=True, check=False, timeout=PORT_LOOKUP_TIMEOUT_SECONDS)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+
     def _pid_from_port(self, port: int | None) -> int | None:
         if port is None:
             return None
 
         if os.name == "nt":
-            proc = subprocess.run(
-                ["netstat", "-ano", "-p", "tcp"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if proc.returncode != 0:
+            proc = self._run_port_lookup(["netstat", "-ano", "-p", "tcp"])
+            if proc is None or proc.returncode != 0:
                 return None
             needle = f":{port}"
             for raw_line in proc.stdout.splitlines():
@@ -367,13 +373,8 @@ class ServiceProcessManager:
                     return None
             return None
 
-        proc = subprocess.run(
-            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0:
+        proc = self._run_port_lookup(["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"])
+        if proc is None or proc.returncode != 0:
             return None
         for line in proc.stdout.splitlines():
             line = line.strip()

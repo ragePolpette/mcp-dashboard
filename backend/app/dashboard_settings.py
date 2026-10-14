@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .fs_utils import atomic_write_json
 from .models import ServiceDefinition
 
 DEFAULT_SETTINGS = {
@@ -17,11 +18,13 @@ DEFAULT_SETTINGS = {
     "show_alerts_in_home": True,
     "log_retention_days": 15,
     "recent_rows_limit": 30,
+    "vault_auto_lock_minutes": 30,
 }
 
 VALID_REFRESH_INTERVALS = {0, 5, 10, 30}
 VALID_ADVANCED_TABS = {"automatic", "options", "logs", "inspector"}
 VALID_SERVICE_ORDER = {"manual", "group", "status"}
+MAX_VAULT_AUTO_LOCK_MINUTES = 24 * 60
 
 
 class DashboardSettingsManager:
@@ -59,12 +62,11 @@ class DashboardSettingsManager:
                 self._service_visibility = out
 
     def _save(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "preferences": self._preferences,
             "service_visibility": self._service_visibility,
         }
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        atomic_write_json(self.state_path, payload)
 
     def _normalize_preference(self, key: str, value: Any) -> Any:
         if key == "refresh_interval_sec":
@@ -101,6 +103,12 @@ class DashboardSettingsManager:
             numeric = int(value)
             if numeric < 10 or numeric > 500:
                 raise ValueError("Invalid recent rows limit")
+            return numeric
+
+        if key == "vault_auto_lock_minutes":
+            numeric = int(value)
+            if numeric < 0 or numeric > MAX_VAULT_AUTO_LOCK_MINUTES:
+                raise ValueError("Invalid vault auto-lock timeout")
             return numeric
 
         raise ValueError(f"Unknown preference: {key}")

@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from fastapi.testclient import TestClient
+
+from dashboard_client import dashboard_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 import app.main as main
@@ -44,7 +45,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setattr(main, 'vault_manager', vault)
     monkeypatch.setattr(main, 'db_target_registry', registry)
     monkeypatch.setattr(main.process_manager, 'status', lambda *a, **kw: {'running': False})
-    return TestClient(main.app), vault, registry, tmp_path
+    return dashboard_client(main.app), vault, registry, tmp_path
 
 def test_save_encrypts_and_never_returns_password(setup):
     client, vault, registry, path = setup

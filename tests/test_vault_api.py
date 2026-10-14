@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import tempfile
 import sys
+import tempfile
+from pathlib import Path
 
-from fastapi.testclient import TestClient
+from dashboard_client import dashboard_client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -20,7 +20,7 @@ def test_vault_initialize_store_lock_and_unlock(monkeypatch):
         vault = DashboardSecretVault(Path(tmp) / "vault")
         monkeypatch.setattr("app.main.vault_manager", vault)
 
-        client = TestClient(app)
+        client = dashboard_client(app)
 
         status_before = client.get("/api/vault")
         assert status_before.status_code == 200
@@ -52,7 +52,7 @@ def test_vault_delete_entry(monkeypatch):
         vault.upsert_secret("db.prod.connection", "Server=.;Database=Prod;")
         monkeypatch.setattr("app.main.vault_manager", vault)
 
-        client = TestClient(app)
+        client = dashboard_client(app)
         response = client.delete("/api/vault/entries", params={"ref": "db.prod.connection"})
 
         assert response.status_code == 200
@@ -72,7 +72,7 @@ def test_vault_status_exposes_ref_usage(monkeypatch):
             lambda: {"vault://db.prod.connection": [{"service_id": "llm-db-prod-mcp", "option_id": "db_prod_connection_string"}]},
         )
 
-        client = TestClient(app)
+        client = dashboard_client(app)
         response = client.get("/api/vault")
 
         assert response.status_code == 200

@@ -17,8 +17,10 @@ jobs:
         with:
           node-version: "22"
       - name: Install Python dependencies
-        run: pip install -r backend/requirements.txt pytest httpx
+        run: pip install -r requirements-dev.txt
+      - name: Lint
+        run: ruff check .
       - name: Python tests
         run: python -m pytest -q
       - name: Frontend tests
-        run: node --test tests/*.cjs
+        run: npm test

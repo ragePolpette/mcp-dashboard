@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .fs_utils import atomic_write_json
 from .models import ServiceDefinition, ServiceOptionDefinition
 from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 
@@ -42,9 +43,7 @@ class ServiceOptionsManager:
         self._state = out
 
     def _save(self) -> None:
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"services": self._state}
-        self.state_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2), encoding="utf-8")
+        atomic_write_json(self.state_path, {"services": self._state})
 
     def _normalize_value(self, option: ServiceOptionDefinition, value: Any) -> Any:
         kind = option.kind

@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import tempfile
 import sys
+import tempfile
+from pathlib import Path
 
-from fastapi.testclient import TestClient
+from dashboard_client import dashboard_client
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.main import app  # noqa: E402
 from app.db_target_registry import DbTargetRegistry  # noqa: E402
+from app.main import app  # noqa: E402
 from app.models import ServiceControlDefinition, ServiceDefinition, ServiceLogSource  # noqa: E402
 from app.secret_vault import DashboardSecretVault  # noqa: E402
 
@@ -35,10 +35,10 @@ def _make_registry(tmp: str, *, with_vault: bool = False):
 def test_db_targets_api_supports_create_update_and_disable(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:
         registry, _vault = _make_registry(tmp)
-        monkeypatch.setattr("app.main.process_manager.status", lambda service: {"running": False})
+        monkeypatch.setattr("app.main.process_manager.status", lambda service, **_kwargs: {"running": False})
         monkeypatch.setattr("app.main.db_target_registry", registry)
 
-        client = TestClient(app)
+        client = dashboard_client(app)
 
         listed = client.get("/api/db-targets")
         assert listed.status_code == 200
@@ -105,7 +105,7 @@ def test_sql_service_start_uses_runtime_registry_env_and_vault_ref(monkeypatch):
             lambda _service, env_overrides=None: captured.update(env_overrides or {}) or {"ok": True},
         )
 
-        client = TestClient(app)
+        client = dashboard_client(app)
         response = client.post("/api/services/llm-sql-db-mcp/start")
 
         assert response.status_code == 200
@@ -122,9 +122,9 @@ def test_db_target_runtime_contract_is_compatible_with_sql_mcp(monkeypatch):
         registry.update_target("prod-main", {"connection": {"vault_ref": "db.prod.main"}})
 
         monkeypatch.setattr("app.main.db_target_registry", registry)
-        monkeypatch.setattr("app.main.process_manager.status", lambda _service: {"running": True, "pid": 4242})
+        monkeypatch.setattr("app.main.process_manager.status", lambda _service, **_kwargs: {"running": True, "pid": 4242})
 
-        client = TestClient(app)
+        client = dashboard_client(app)
 
         runtime_response = client.get("/api/db-targets/runtime")
         assert runtime_response.status_code == 200
@@ -151,7 +151,7 @@ def test_db_target_runtime_contract_is_compatible_with_sql_mcp(monkeypatch):
 
 
 def test_sql_mcp_service_options_expose_only_global_runtime_settings():
-    client = TestClient(app)
+    client = dashboard_client(app)
 
     response = client.get("/api/services/llm-sql-db-mcp/options")
 
@@ -170,15 +170,19 @@ def test_vault_status_includes_db_target_registry_ref_usage(monkeypatch):
         registry.update_target("prod-main", {"connection": {"vault_ref": "db.prod.main"}})
 
         monkeypatch.setattr("app.main.db_target_registry", registry)
+        monkeypatch.setattr("app.main.vault_manager", vault)
         monkeypatch.setattr(
             "app.main.options_manager.secret_ref_usage",
             lambda: {"vault://service.secret": [{"service_id": "llm-memory", "option_id": "memory_secret"}]},
         )
 
-        client = TestClient(app)
+        client = dashboard_client(app)
         response = client.get("/api/vault")
 
         assert response.status_code == 200
         payload = response.json()
         assert payload["ref_usage"]["vault://service.secret"][0]["service_id"] == "llm-memory"
         assert payload["ref_usage"]["vault://db.prod.main"][0]["target_id"] == "prod-main"
+        for usages in payload["ref_usage"].values():
+            for usage in usages:
+                assert set(usage) in ({"service_id", "option_id"}, {"target_id", "field_id"})

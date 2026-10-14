@@ -1,0 +1,12 @@
+{
+  "name": "mcp-dashboard-frontend-tests",
+  "private": true,
+  "description": "Frontend tests for mcp-dashboard. No runtime dependencies.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test tests/*.cjs"
+  }
+}

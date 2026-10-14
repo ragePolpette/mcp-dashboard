@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
-import socket
-import tempfile
-from pathlib import Path
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -288,7 +287,7 @@ def test_probe_health_treats_socket_timeout_as_unhealthy(monkeypatch):
     manager = ServiceProcessManager()
 
     def raise_timeout(req, timeout=1.5):
-        raise socket.timeout("timed out while reading response")
+        raise TimeoutError("timed out while reading response")
 
     monkeypatch.setattr("app.process_manager.urllib.request.urlopen", raise_timeout)
 

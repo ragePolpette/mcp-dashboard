@@ -10,12 +10,15 @@
 ## Running tests
 
 ```bash
-pip install -r backend/requirements.txt pytest httpx
+pip install -r requirements-dev.txt
+ruff check .
 python -m pytest -q
-node --test tests/*.cjs
+npm test
 ```
 
-Tests must run without external services and use synthetic data only. CI runs the same commands on Python 3.11 and Node 22. No linter is configured.
+Tests must run without external services and use synthetic data only. CI runs the same commands on Python 3.11 and Node 22. Lint rules live in `pyproject.toml`.
+
+API tests should build their client with `tests/dashboard_client.py`, which sends the trusted host, the `X-Requested-With` marker and the session token like the bundled frontend does.
 
 ## Security rules
 

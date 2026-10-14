@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import tempfile
-from datetime import datetime, timezone
-from pathlib import Path
 import sys
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -143,7 +143,7 @@ def test_prune_old_logs_removes_entries_older_than_retention_window():
         pruned = pipeline.prune_old_logs(
             [service],
             retention_days=15,
-            now=datetime(2026, 3, 25, 0, 0, 0, tzinfo=timezone.utc),
+            now=datetime(2026, 3, 25, 0, 0, 0, tzinfo=UTC),
         )
 
         assert str(log_path.resolve()) in pruned
