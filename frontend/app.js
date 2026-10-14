@@ -4181,7 +4181,7 @@ async function enableSelectedDbTarget() {
 }
 
 function defaultRepositoryDraft() {
-  return { id: "", display_name: "", workspace: "", repo_slug: "", default_destination_branch: "", status: "active", is_default: false };
+  return { id: "", display_name: "", workspace: "", repo_slug: "", default_destination_branch: "", status: "active", allow_merge: false, is_default: false };
 }
 
 function setRepositoriesFlash(message, kind = "info") {
@@ -4193,7 +4193,7 @@ function selectRepository(repositoryId) {
   const repository = repositoriesState.items.find(item => item.id === repositoryId);
   if (!repository) return;
   repositoriesState.selectedId = repositoryId;
-  repositoriesState.draft = cloneValue(repository);
+  repositoriesState.draft = { ...defaultRepositoryDraft(), ...cloneValue(repository), allow_merge: repository.allow_merge === true };
   renderRepositoriesPanel();
 }
 
@@ -4233,7 +4233,7 @@ function renderRepositoriesPanel() {
     const row = document.createElement("button");
     row.type = "button";
     row.className = `db-target-card ${repositoriesState.selectedId === repository.id ? "active-card" : ""}`;
-    row.innerHTML = `<div class="db-target-card-header"><div><div class="db-target-card-title">${escapeHtml(repository.display_name || repository.id)}</div><div class="db-target-card-meta">${escapeHtml(repository.workspace)}/${escapeHtml(repository.repo_slug)}</div></div><div class="db-target-badge-row"><span class="db-target-badge ${repository.status === "active" ? "status-active" : "status-disabled"}">${escapeHtml(repository.status)}</span>${repository.is_default ? '<span class="db-target-badge status-runtime">default</span>' : ""}</div></div>`;
+    row.innerHTML = `<div class="db-target-card-header"><div><div class="db-target-card-title">${escapeHtml(repository.display_name || repository.id)}</div><div class="db-target-card-meta">${escapeHtml(repository.workspace)}/${escapeHtml(repository.repo_slug)}</div></div><div class="db-target-badge-row"><span class="db-target-badge ${repository.status === "active" ? "status-active" : "status-disabled"}">${escapeHtml(repository.status)}</span>${repository.is_default ? '<span class="db-target-badge status-runtime">default</span>' : ""}<span class="db-target-badge ${repository.allow_merge ? "status-active" : "status-disabled"}">merge: ${repository.allow_merge ? "on" : "off"}</span></div></div>`;
     row.addEventListener("click", () => selectRepository(repository.id));
     repositoriesList.appendChild(row);
   }
@@ -4248,6 +4248,7 @@ function renderRepositoriesPanel() {
     <div class="db-target-field"><label>Default Destination Branch</label><input data-repository-field="default_destination_branch" value="${escapeHtml(draft.default_destination_branch)}"></div>
     <div class="db-target-field"><label>Status</label><select data-repository-field="status"><option value="active" ${draft.status === "active" ? "selected" : ""}>active</option><option value="disabled" ${draft.status === "disabled" ? "selected" : ""}>disabled</option></select></div>
     <label class="settings-toggle"><input data-repository-field="is_default" type="checkbox" ${draft.is_default ? "checked" : ""}>Repository predefinito</label>
+    <label class="settings-toggle"><input data-repository-field="allow_merge" type="checkbox" ${draft.allow_merge ? "checked" : ""}>Consenti merge PR dall'agente (richiede conferma esplicita in chat)</label>
   </div></div><div class="db-target-editor-actions"><button type="submit" class="btn-ok">${selected ? "Salva Repository" : "Crea Repository"}</button></div>`;
   repositoryEditorForm.querySelectorAll("[data-repository-field]").forEach(input => input.addEventListener("change", event => {
     const field = event.target.dataset.repositoryField;
@@ -4259,6 +4260,7 @@ function renderRepositoriesPanel() {
 async function saveRepository(event) {
   event.preventDefault();
   const draft = cloneValue(repositoriesState.draft || defaultRepositoryDraft());
+  draft.allow_merge = draft.allow_merge === true;
   const selected = repositoriesState.selectedId && repositoriesState.selectedId !== "__new__";
   try {
     const response = await apiJson(selected ? `/api/bitbucket-repositories/${encodeURIComponent(repositoriesState.selectedId)}` : "/api/bitbucket-repositories", {

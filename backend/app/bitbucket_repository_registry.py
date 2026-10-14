@@ -10,6 +10,21 @@ from pathlib import Path
 from typing import Any
 
 
+def _parse_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "on"}:
+        return True
+    if text in {"false", "0", "no", "off", ""}:
+        return False
+    raise ValueError("allow_merge must be a boolean.")
+
+
 class BitbucketRepositoryRegistry:
     def __init__(self, state_path: Path) -> None:
         self.state_path = Path(state_path)
@@ -55,6 +70,12 @@ class BitbucketRepositoryRegistry:
         status = str(source.get("status") or "active").strip().lower()
         if status not in {"active", "disabled"}:
             raise ValueError("status must be active or disabled.")
+        if "allow_merge" in raw:
+            allow_merge_raw = raw["allow_merge"]
+        elif "allowMerge" in raw:
+            allow_merge_raw = raw["allowMerge"]
+        else:
+            allow_merge_raw = source.get("allow_merge", source.get("allowMerge"))
         return {
             "id": repository_id,
             "display_name": str(source.get("display_name") or repository_id).strip() or repository_id,
@@ -62,6 +83,7 @@ class BitbucketRepositoryRegistry:
             "repo_slug": repo_slug,
             "default_destination_branch": str(source.get("default_destination_branch") or "").strip(),
             "status": status,
+            "allow_merge": _parse_bool(allow_merge_raw),
         }
 
     def _index(self, repository_id: str) -> int:
@@ -116,6 +138,7 @@ class BitbucketRepositoryRegistry:
                     "repoSlug": item["repo_slug"],
                     "defaultDestinationBranch": item["default_destination_branch"],
                     "status": item["status"],
+                    "allowMerge": bool(item.get("allow_merge", False)),
                 }
                 for item in self._repositories
             ]
