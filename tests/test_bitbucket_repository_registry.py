@@ -93,3 +93,11 @@ def test_loading_saved_registry_without_allow_merge_defaults_false():
         registry = BitbucketRepositoryRegistry(path)
         assert registry.get_repository("one")["allow_merge"] is False
         assert json.loads(registry.runtime_env()["BITBUCKET_REPOSITORIES_JSON"])[0]["allowMerge"] is False
+
+
+def test_empty_registry_leaves_legacy_single_repository_env_untouched():
+    with tempfile.TemporaryDirectory() as tmp:
+        registry = BitbucketRepositoryRegistry(Path(tmp) / "repositories.json")
+        assert registry.runtime_env() == {}
+        registry.create_repository({"id": "one", "workspace": "ws", "repo_slug": "repo-one"})
+        assert "BITBUCKET_REPOSITORIES_JSON" in registry.runtime_env()
