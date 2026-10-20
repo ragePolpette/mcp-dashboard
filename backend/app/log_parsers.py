@@ -31,7 +31,24 @@ def _normalize_level(value: str | None, fallback: str = "INFO") -> str:
     level = value.strip().upper()
     if level in {"DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL"}:
         return "WARN" if level == "WARNING" else level
+    # .NET Microsoft.Extensions.Logging level names.
+    if level == "INFORMATION":
+        return "INFO"
+    if level == "TRACE":
+        return "DEBUG"
     return fallback
+
+
+# Keys written by the .NET JSON console formatter (JsonConsoleFormatter).
+_DOTNET_JSON_KEYS = {"Message", "LogLevel", "Timestamp", "Category"}
+
+
+def _first(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = payload.get(key)
+        if value:
+            return value
+    return None
 
 
 def _apply_json_parser(line: str, entry: ParsedLogEntry) -> bool:
@@ -46,12 +63,15 @@ def _apply_json_parser(line: str, entry: ParsedLogEntry) -> bool:
         return False
 
     entry.raw = line
-    entry.message = str(payload.get("message") or payload.get("msg") or line).strip()
-    entry.level = _normalize_level(str(payload.get("level") or payload.get("severity") or "INFO"))
-    entry.timestamp = str(payload.get("timestamp") or payload.get("ts") or "") or None
-    entry.logger = str(payload.get("logger") or payload.get("source") or "") or None
+    entry.message = str(_first(payload, "message", "msg", "Message") or line).strip()
+    entry.level = _normalize_level(str(_first(payload, "level", "severity", "LogLevel") or "INFO"))
+    entry.timestamp = str(_first(payload, "timestamp", "ts", "Timestamp") or "") or None
+    entry.logger = str(_first(payload, "logger", "source", "Category") or "") or None
     entry.event = str(payload.get("event") or "log.json")
-    entry.fields.update({k: v for k, v in payload.items() if k not in {"message", "msg", "level", "severity", "timestamp", "ts", "logger", "source", "event"}})
+    consumed = {"message", "msg", "level", "severity", "timestamp", "ts", "logger", "source", "event"}
+    if not consumed & payload.keys():
+        consumed |= _DOTNET_JSON_KEYS
+    entry.fields.update({k: v for k, v in payload.items() if k not in consumed})
     entry.tags.append("json")
     return True
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- LLM Jenkins MCP > Destinazioni: registry of deploy destinations by exact name with an `allow`, `confirm` or `deny` policy, plus a default policy for unlisted destinations (`confirm` or `deny`, never `allow`). Stored in `runtime/jenkins_demo_policies.json` and passed to the service as `JENKINS_DEMO_POLICIES`.
+- "Aggiorna da Jenkins" reads the job's `DESTINAZIONE` choices through the running MCP (`POST /api/jenkins-demos/discover`, read-only `/admin/destinations` on loopback) and lists the destinations still to classify. The dashboard has no Jenkins credentials; it authenticates to the MCP with a key generated per dashboard process (`JENKINS_MCP_ADMIN_KEY`), never persisted.
+- "Applica" (`POST /api/jenkins-demos/runtime/apply`) restarts the Jenkins service only when its active registry (`/admin/policies`) differs from the saved one.
+- Jenkins rule set and alerts for queued deploys, two-step confirmations (`confirm.requested/used/expired/invalid`), denied admin requests and configuration warnings.
+
 ### Security
 
 - State-changing API requests (`POST`, `PUT`, `PATCH`, `DELETE`) now require the `X-Requested-With: mcp-dashboard` header and the per-process session token in `X-Dashboard-Token`. Requests whose `Origin` or `Referer` is not the dashboard itself are rejected with `403`. Scripts calling the API must add both headers; the token is available in `runtime/dashboard_session.token` (mode `0600`) and through `GET /api/session`.
@@ -23,6 +30,8 @@
 
 ### Changed
 
+- The `json` log parser also reads the .NET JSON console formatter keys (`Timestamp`, `LogLevel`, `Category`, `Message`), so .NET services get their own level and timestamp instead of the ingestion time.
+- `JENKINS_ALLOWED_DEMOS` is no longer a Jenkins MCP option: destinations are managed in the registry.
 - Service status is refreshed by a background poller (every 3 seconds, `MCP_DASHBOARD_STATUS_POLL_SECONDS`) and served from a cache. Start, stop and restart invalidate it.
 - Live log streaming reads files in a worker thread and only emits complete lines.
 - Added `pyproject.toml` with ruff and pytest configuration, `requirements-dev.txt`, and a `package.json` with `npm test`. CI now runs `ruff check`.

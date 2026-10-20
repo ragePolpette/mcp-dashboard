@@ -689,16 +689,6 @@
             "secret": true,
             "required": true,
             "default": ""
-          },
-          {
-            "id": "jenkins_allowed_demos",
-            "label": "Demo consentite",
-            "type": "string",
-            "env_var": "JENKINS_ALLOWED_DEMOS",
-            "description": "Allowlist demo separata da virgole. Vuoto = default demo3..demo8; la demo secca resta esclusa finche' non la elenchi esplicitamente.",
-            "secret": false,
-            "required": false,
-            "default": ""
           }
         ]
       },

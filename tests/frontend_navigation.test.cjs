@@ -14,7 +14,7 @@ function element() {
 }
 function context(service) {
   const ctx = {advancedServiceId:service, supportsInspector:()=>false, supportsMemoryAdmin:()=>false};
-  for (const name of ['tabOptionsBtn','advancedOptionsView','tabLogsBtn','advancedLogsView','tabInspectorBtn','advancedInspectorView','tabMemoryBtn','advancedMemoryView','tabDbTargetsBtn','advancedDbTargetsView','tabRepositoriesBtn','advancedRepositoriesView','settingsServicesTabBtn','settingsDashboardTabBtn','settingsVaultTabBtn','settingsServicesView','settingsDashboardView','settingsVaultView']) ctx[name]=element();
+  for (const name of ['tabOptionsBtn','advancedOptionsView','tabLogsBtn','advancedLogsView','tabInspectorBtn','advancedInspectorView','tabMemoryBtn','advancedMemoryView','tabDbTargetsBtn','advancedDbTargetsView','tabRepositoriesBtn','advancedRepositoriesView','tabJenkinsDemosBtn','advancedJenkinsDemosView','settingsServicesTabBtn','settingsDashboardTabBtn','settingsVaultTabBtn','settingsServicesView','settingsDashboardView','settingsVaultView']) ctx[name]=element();
   ctx.password=element();ctx.document={getElementById:()=>ctx.password};
   vm.createContext(ctx);
   vm.runInContext(source.slice(source.indexOf('function setAdvancedTab('), source.indexOf('function toDisplayText(')),ctx);
@@ -52,4 +52,15 @@ test('target markup belongs to advanced section, with one form and local feedbac
   // Connections are edited in the Vault; targets select their own reference.
   assert.equal(html.includes('id="dbConnectionPanel"'),false);
   for(const id of ['advancedRepositoriesView','repositoryEditorForm','repositoriesFlash']) assert.equal(html.split(`id="${id}"`).length,2);
+  for(const id of ['advancedJenkinsDemosView','jenkinsDemosForm','jenkinsDemosFlash','jenkinsDemosDiscoverBtn','jenkinsDemosApplyBtn']) assert.equal(html.split(`id="${id}"`).length,2);
+});
+test('Jenkins destinations tab opens only for the Jenkins service',()=>{
+  const c=context('llm-jenkins-mcp');c.setAdvancedTab('jenkins-demos');
+  assert.equal(c.advancedJenkinsDemosView.classList.contains('hidden'),false);
+  assert.equal(c.tabJenkinsDemosBtn.attributes['aria-selected'],'true');
+  assert.equal(c.tabRepositoriesBtn.classList.contains('hidden'),true);
+  c.advancedServiceId='llm-bitbucket-mcp';c.setAdvancedTab('jenkins-demos');
+  assert.equal(c.advancedJenkinsDemosView.classList.contains('hidden'),true);
+  assert.equal(c.tabJenkinsDemosBtn.classList.contains('hidden'),true);
+  assert.equal(c.advancedOptionsView.classList.contains('hidden'),false);
 });

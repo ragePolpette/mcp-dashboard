@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
@@ -128,9 +130,9 @@ def test_services_config_defines_llm_jenkins_mcp():
     assert options["jenkins_token"]["required"] is True
     assert options["jenkins_url"]["secret"] is False
     assert options["jenkins_user"]["secret"] is False
-    assert options["jenkins_allowed_demos"]["required"] is False
     env_vars = {o["env_var"] for o in svc["control"]["options"]}
-    assert env_vars == {"JENKINS_URL", "JENKINS_USER", "JENKINS_TOKEN", "JENKINS_ALLOWED_DEMOS"}
+    # Destinations and admin key come from the dashboard, not from user options.
+    assert env_vars == {"JENKINS_URL", "JENKINS_USER", "JENKINS_TOKEN"}
 
 
 def test_alerts_config_has_jenkins_rules():
@@ -138,5 +140,91 @@ def test_alerts_config_has_jenkins_rules():
     rules = config["services"].get("llm-jenkins-mcp")
     assert rules, "nessuna regola alert per llm-jenkins-mcp"
     events = {r["event"] for r in rules}
-    assert "jenkins.auth_error" in events
-    assert "jenkins.config_invalid" in events
+    assert {"jenkins.auth_error", "jenkins.config_invalid", "jenkins.tool.error",
+            "jenkins.confirm.invalid", "jenkins.admin.denied", "jenkins.config_warning"} <= events
+
+
+def _ev(event: str, payload: str) -> str:
+    return f"[LLM_JENKINS_MCP] 2026-10-20T09:15:30.123Z {event} {payload}"
+
+
+def test_trigger_with_build_and_queue_id_is_a_deploy():
+    entry = _entry(_ev("tool.call", '{"tool":"trigger_demo_deploy","demo":"demo4","branch":"feature/x",'
+                                    '"build":3396,"queue_id":77,"policy":"allow","outcome":"ok","duration_ms":900}'))
+    assert entry.event == "jenkins.deploy.triggered"
+    assert entry.fields["build"] == 3396 and entry.fields["queue_id"] == 77
+
+
+def test_queued_trigger_is_not_an_error():
+    entry = _entry(_ev("tool.call", '{"tool":"trigger_demo_deploy","demo":"demo4","branch":"feature/x",'
+                                    '"queue_id":78,"policy":"allow","outcome":"queued","duration_ms":45000}'))
+    assert entry.event == "jenkins.deploy.queued"
+    assert entry.level == "INFO"
+    assert "queued" in entry.tags and "error" not in entry.tags
+
+
+def test_first_confirmation_phase_is_not_a_deploy():
+    entry = _entry(_ev("tool.call", '{"tool":"trigger_demo_deploy","demo":"demo6","branch":"master",'
+                                    '"policy":"confirm","outcome":"confirm_required","duration_ms":12}'))
+    assert entry.event == "jenkins.deploy.confirm_required"
+    assert entry.level == "INFO"
+    assert "write" not in entry.tags
+
+
+@pytest.mark.parametrize(
+    "event, payload, expected, level",
+    [
+        ("confirm.requested",
+         '{"tool":"trigger_demo_deploy","demo":"demo6","branch":"origin/master","token_id":"id-demo6","expires_in_s":300}',
+         "jenkins.confirm.requested", "INFO"),
+        ("confirm.used", '{"tool":"trigger_demo_deploy","demo":"demo6","branch":"origin/master","token_id":"id-demo6"}',
+         "jenkins.confirm.used", "INFO"),
+        ("confirm.expired", '{"tool":"trigger_demo_deploy","demo":"demo6","branch":"origin/master","token_id":"id-demo6"}',
+         "jenkins.confirm.expired", "WARN"),
+        ("confirm.invalid", '{"tool":"trigger_demo_deploy","demo":"demo6","branch":"origin/master","reason":"unknown"}',
+         "jenkins.confirm.invalid", "WARN"),
+        ("admin.denied", '{"path":"/admin/destinations"}', "jenkins.admin.denied", "WARN"),
+        ("admin.destinations", '{"outcome":"error","error":"impossibile leggere le destinazioni del job da Jenkins: timeout"}',
+         "jenkins.admin.discovery_failed", "WARN"),
+        ("config.warning", '{"message":"JENKINS_ALLOWED_DEMOS \\u00E8 stata rimossa e viene ignorata"}',
+         "jenkins.config_warning", "WARN"),
+    ],
+)
+def test_confirmation_admin_and_config_events(event, payload, expected, level):
+    entry = _entry(_ev(event, payload))
+    assert entry.event == expected
+    assert entry.level == level
+    assert entry.timestamp == "2026-10-20T09:15:30.123Z"
+
+
+def test_admin_discovery_auth_error_is_an_auth_error():
+    entry = _entry(_ev("admin.destinations", '{"outcome":"error","error":"impossibile leggere le destinazioni del job '
+                                             'da Jenkins: Chiamata a Jenkins: HTTP 401, credenziali non valide."}'))
+    assert entry.event == "jenkins.auth_error"
+
+
+def test_dotnet_json_console_line_is_parsed_with_level_and_timestamp():
+    line = ('{"Timestamp":"2026-10-20T13:48:58.317Z","EventId":14,"LogLevel":"Information",'
+            '"Category":"Microsoft.Hosting.Lifetime","Message":"Now listening on: http://127.0.0.1:8785",'
+            '"State":{"address":"http://127.0.0.1:8785"}}')
+    entry = _entry(line)
+    assert entry.level == "INFO"
+    assert entry.timestamp == "2026-10-20T13:48:58.317Z"
+    assert entry.logger == "Microsoft.Hosting.Lifetime"
+    assert entry.message == "Now listening on: http://127.0.0.1:8785"
+    assert "LogLevel" not in entry.fields and entry.fields["EventId"] == 14
+
+
+def test_dotnet_json_warning_and_error_levels():
+    warn = _entry('{"Timestamp":"2026-10-20T13:48:58.293Z","EventId":15,"LogLevel":"Warning",'
+                  '"Category":"Microsoft.AspNetCore.Hosting.Diagnostics","Message":"Overriding HTTP_PORTS"}')
+    err = _entry('{"Timestamp":"2026-10-20T13:48:58.293Z","EventId":1,"LogLevel":"Critical",'
+                 '"Category":"Microsoft.AspNetCore.Server.Kestrel","Message":"boom"}')
+    trace = _parse('{"Timestamp":"2026-10-20T13:48:58.293Z","LogLevel":"Trace","Category":"X","Message":"t"}')
+    assert warn.level == "WARN" and err.level == "CRITICAL" and trace.level == "DEBUG"
+
+
+def test_lowercase_json_lines_are_unchanged():
+    entry = _parse('{"level":"warning","message":"m","timestamp":"2026-10-20T00:00:00Z","logger":"x","Message":"ignored"}')
+    assert entry.level == "WARN" and entry.message == "m" and entry.logger == "x"
+    assert entry.fields["Message"] == "ignored"

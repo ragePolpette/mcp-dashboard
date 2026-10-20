@@ -10,11 +10,19 @@ const settingsFlash = document.getElementById("settingsFlash");
 const settingsServicesTabBtn = document.getElementById("settingsServicesTabBtn");
 const tabDbTargetsBtn = document.getElementById("tabDbTargetsBtn");
 const tabRepositoriesBtn = document.getElementById("tabRepositoriesBtn");
+const tabJenkinsDemosBtn = document.getElementById("tabJenkinsDemosBtn");
 const settingsDashboardTabBtn = document.getElementById("settingsDashboardTabBtn");
 const settingsVaultTabBtn = document.getElementById("settingsVaultTabBtn");
 const settingsServicesView = document.getElementById("settingsServicesView");
 const advancedDbTargetsView = document.getElementById("advancedDbTargetsView");
 const advancedRepositoriesView = document.getElementById("advancedRepositoriesView");
+const advancedJenkinsDemosView = document.getElementById("advancedJenkinsDemosView");
+const jenkinsDemosSummary = document.getElementById("jenkinsDemosSummary");
+const jenkinsDemosForm = document.getElementById("jenkinsDemosForm");
+const jenkinsDemosFlash = document.getElementById("jenkinsDemosFlash");
+const jenkinsDemosApplyBtn = document.getElementById("jenkinsDemosApplyBtn");
+const jenkinsDemosDiscoverBtn = document.getElementById("jenkinsDemosDiscoverBtn");
+const jenkinsDemosReloadBtn = document.getElementById("jenkinsDemosReloadBtn");
 const settingsDashboardView = document.getElementById("settingsDashboardView");
 const settingsVaultView = document.getElementById("settingsVaultView");
 const settingsServicesList = document.getElementById("settingsServicesList");
@@ -154,6 +162,9 @@ let dbTargetsState = {
   runtime: null
 };
 let repositoriesState = { loading: false, error: "", items: [], selectedId: "", draft: null };
+// draft: registro in modifica ({default_policy, demos:[{name, policy}]});
+// discovery: ultimo esito di "Aggiorna da Jenkins" (choices lette tramite l'MCP).
+let jenkinsDemosState = { loading: false, error: "", saved: null, draft: null, discovery: null, dirty: false };
 let dashboardSettings = {
   preferences: {
     refresh_interval_sec: 5,
@@ -799,6 +810,7 @@ function createSummaryCard(label, value) {
 function setAdvancedTab(tabName) {
   if (tabName === "db-targets" && advancedServiceId !== "llm-sql-db-mcp") tabName = "options";
   if (tabName === "repositories" && advancedServiceId !== "llm-bitbucket-mcp") tabName = "options";
+  if (tabName === "jenkins-demos" && advancedServiceId !== "llm-jenkins-mcp") tabName = "options";
   if (tabName !== "db-targets") {
     const password = document.getElementById("sqlPassword");
     if (password) password.value = "";
@@ -808,6 +820,7 @@ function setAdvancedTab(tabName) {
     { name: "options", button: tabOptionsBtn, view: advancedOptionsView, enabled: true },
     { name: "db-targets", button: tabDbTargetsBtn, view: advancedDbTargetsView, enabled: advancedServiceId === "llm-sql-db-mcp" },
     { name: "repositories", button: tabRepositoriesBtn, view: advancedRepositoriesView, enabled: advancedServiceId === "llm-bitbucket-mcp" },
+    { name: "jenkins-demos", button: tabJenkinsDemosBtn, view: advancedJenkinsDemosView, enabled: advancedServiceId === "llm-jenkins-mcp" },
     { name: "logs", button: tabLogsBtn, view: advancedLogsView, enabled: true },
     {
       name: "inspector",
@@ -4378,6 +4391,178 @@ async function applyRepositories() {
   }
 }
 
+const JENKINS_POLICIES = ["allow", "confirm", "deny"];
+const JENKINS_DEMO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+
+function setJenkinsDemosFlash(message, kind = "info") {
+  jenkinsDemosFlash.className = `settings-flash ${kind}`;
+  jenkinsDemosFlash.textContent = message;
+}
+
+function jenkinsPolicyOptions(selected, policies = JENKINS_POLICIES) {
+  return policies.map(policy => `<option value="${policy}" ${policy === selected ? "selected" : ""}>${policy}</option>`).join("");
+}
+
+async function loadJenkinsDemos() {
+  jenkinsDemosState.loading = true;
+  jenkinsDemosState.error = "";
+  try {
+    const payload = await apiJson("/api/jenkins-demos");
+    jenkinsDemosState.saved = cloneValue(payload.registry);
+    jenkinsDemosState.draft = cloneValue(payload.registry);
+    jenkinsDemosState.dirty = false;
+  } catch (error) {
+    jenkinsDemosState.error = error.message;
+  } finally {
+    jenkinsDemosState.loading = false;
+    renderJenkinsDemosPanel();
+  }
+}
+
+async function discoverJenkinsDemos() {
+  setJenkinsDemosFlash("Lettura delle destinazioni da Jenkins...", "info");
+  try {
+    const payload = await apiJson("/api/jenkins-demos/discover", { method: "POST" });
+    jenkinsDemosState.discovery = payload;
+    const fresh = jenkinsUnclassified();
+    setJenkinsDemosFlash(fresh.length
+      ? `${payload.choices.length} destinazioni in Jenkins, ${fresh.length} da classificare: ${fresh.join(", ")}.`
+      : `${payload.choices.length} destinazioni in Jenkins, tutte nel registro.`, fresh.length ? "info" : "success");
+  } catch (error) {
+    setJenkinsDemosFlash(error.message, "error");
+  }
+  renderJenkinsDemosPanel();
+}
+
+// Destinazioni lette da Jenkins che non sono (ancora) nella bozza del registro.
+function jenkinsUnclassified() {
+  const known = new Set((jenkinsDemosState.draft?.demos || []).map(item => item.name));
+  return (jenkinsDemosState.discovery?.choices || []).filter(name => !known.has(name));
+}
+
+function setJenkinsDemoPolicy(name, policy) {
+  const draft = jenkinsDemosState.draft;
+  const existing = draft.demos.find(item => item.name === name);
+  if (existing) existing.policy = policy;
+  else draft.demos.push({ name, policy });
+  jenkinsDemosState.dirty = true;
+  renderJenkinsDemosPanel();
+}
+
+function removeJenkinsDemo(name) {
+  jenkinsDemosState.draft.demos = jenkinsDemosState.draft.demos.filter(item => item.name !== name);
+  jenkinsDemosState.dirty = true;
+  renderJenkinsDemosPanel();
+}
+
+function renderJenkinsDemosPanel() {
+  if (!jenkinsDemosSummary || !jenkinsDemosForm) return;
+  const draft = jenkinsDemosState.draft;
+  if (!draft) {
+    jenkinsDemosSummary.textContent = jenkinsDemosState.error || "Registro destinazioni non caricato.";
+    jenkinsDemosForm.innerHTML = "";
+    return;
+  }
+  const discovery = jenkinsDemosState.discovery;
+  const inJenkins = discovery ? new Set(discovery.choices) : null;
+  const unclassified = jenkinsUnclassified();
+  jenkinsDemosSummary.textContent = jenkinsDemosState.error ||
+    `${draft.demos.length} destinazioni nel registro, default ${draft.default_policy}` +
+    (discovery ? `, ${discovery.choices.length} in Jenkins, ${unclassified.length} da classificare` : ", Jenkins non ancora letto") +
+    (jenkinsDemosState.dirty ? " (modifiche non salvate)" : "");
+
+  const badge = name => {
+    if (!inJenkins) return "";
+    return inJenkins.has(name)
+      ? '<span class="db-target-badge status-active">in Jenkins</span>'
+      : '<span class="db-target-badge status-disabled">non presente in Jenkins</span>';
+  };
+  const rows = draft.demos.map(item => `<tr>
+      <td><code>${escapeHtml(item.name)}</code></td>
+      <td><select data-jenkins-policy="${escapeHtml(item.name)}">${jenkinsPolicyOptions(item.policy)}</select></td>
+      <td>${badge(item.name)}</td>
+      <td><button type="button" data-jenkins-remove="${escapeHtml(item.name)}">Rimuovi</button></td>
+    </tr>`);
+  const freshRows = unclassified.map(name => `<tr>
+      <td><code>${escapeHtml(name)}</code></td>
+      <td><select data-jenkins-classify="${escapeHtml(name)}"><option value="" selected>da classificare (default ${escapeHtml(draft.default_policy)})</option>${jenkinsPolicyOptions("")}</select></td>
+      <td><span class="db-target-badge status-runtime">nuova in Jenkins</span></td>
+      <td></td>
+    </tr>`);
+
+  jenkinsDemosForm.innerHTML = `<div class="db-target-editor-section"><h4>Policy di default</h4><div class="db-target-field-grid">
+      <div class="db-target-field"><label>Destinazioni non elencate</label><select data-jenkins-default>${jenkinsPolicyOptions(draft.default_policy, ["confirm", "deny"])}</select></div>
+    </div></div>
+    <div class="db-target-editor-section"><h4>Registro</h4>
+      <table class="jenkins-demos-table"><thead><tr><th>Destinazione</th><th>Policy</th><th>Jenkins</th><th></th></tr></thead>
+      <tbody>${[...rows, ...freshRows].join("") || '<tr><td colspan="4" class="muted">Nessuna destinazione nel registro: tutte usano la policy di default.</td></tr>'}</tbody></table>
+    </div>
+    <div class="db-target-editor-section"><h4>Aggiungi a mano</h4><div class="db-target-field-grid">
+      <div class="db-target-field"><label>Nome esatto in Jenkins</label><input data-jenkins-new-name value="" autocomplete="off"></div>
+      <div class="db-target-field"><label>Policy</label><select data-jenkins-new-policy>${jenkinsPolicyOptions("confirm")}</select></div>
+      <div class="db-target-field"><label>&nbsp;</label><button type="button" data-jenkins-add>Aggiungi</button></div>
+    </div></div>
+    <div class="db-target-editor-actions"><button type="submit" class="btn-ok">Salva registro</button></div>`;
+
+  jenkinsDemosForm.querySelector("[data-jenkins-default]").addEventListener("change", event => {
+    jenkinsDemosState.draft.default_policy = event.target.value;
+    jenkinsDemosState.dirty = true;
+    renderJenkinsDemosPanel();
+  });
+  jenkinsDemosForm.querySelectorAll("[data-jenkins-policy]").forEach(select => select.addEventListener("change", event => {
+    setJenkinsDemoPolicy(event.target.dataset.jenkinsPolicy, event.target.value);
+  }));
+  jenkinsDemosForm.querySelectorAll("[data-jenkins-classify]").forEach(select => select.addEventListener("change", event => {
+    if (event.target.value) setJenkinsDemoPolicy(event.target.dataset.jenkinsClassify, event.target.value);
+  }));
+  jenkinsDemosForm.querySelectorAll("[data-jenkins-remove]").forEach(button => button.addEventListener("click", event => {
+    removeJenkinsDemo(event.target.dataset.jenkinsRemove);
+  }));
+  jenkinsDemosForm.querySelector("[data-jenkins-add]").addEventListener("click", () => {
+    const name = jenkinsDemosForm.querySelector("[data-jenkins-new-name]").value.trim();
+    const policy = jenkinsDemosForm.querySelector("[data-jenkins-new-policy]").value;
+    if (!JENKINS_DEMO_NAME_RE.test(name)) {
+      setJenkinsDemosFlash("Nome non valido: usa il valore esatto di Jenkins (lettere, cifre, _ - .).", "error");
+      return;
+    }
+    if (jenkinsDemosState.draft.demos.some(item => item.name === name)) {
+      setJenkinsDemosFlash(`${name} è già nel registro.`, "error");
+      return;
+    }
+    setJenkinsDemoPolicy(name, policy);
+  });
+  jenkinsDemosForm.onsubmit = saveJenkinsDemos;
+}
+
+async function saveJenkinsDemos(event) {
+  event?.preventDefault();
+  try {
+    const response = await apiJson("/api/jenkins-demos", {
+      method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ values: jenkinsDemosState.draft })
+    });
+    jenkinsDemosState.saved = cloneValue(response.registry);
+    jenkinsDemosState.draft = cloneValue(response.registry);
+    jenkinsDemosState.dirty = false;
+    setJenkinsDemosFlash("Registro salvato. Premi Applica per usarlo nel servizio Jenkins.", "success");
+  } catch (error) {
+    setJenkinsDemosFlash(error.message, "error");
+  }
+  renderJenkinsDemosPanel();
+}
+
+async function applyJenkinsDemos() {
+  if (jenkinsDemosState.dirty) {
+    setJenkinsDemosFlash("Ci sono modifiche non salvate: salva il registro prima di applicarlo.", "error");
+    return;
+  }
+  try {
+    const response = await apiJson("/api/jenkins-demos/runtime/apply", { method: "POST" });
+    setJenkinsDemosFlash(response.message, "success");
+  } catch (error) {
+    setJenkinsDemosFlash(error.message, "error");
+  }
+}
+
 async function loadServices() {
   services = (await apiJson("/api/services"))
     .map((service, index) => ({
@@ -5093,6 +5278,13 @@ tabRepositoriesBtn?.addEventListener("click", async () => {
 repositoriesReloadBtn?.addEventListener("click", loadRepositories);
 repositoryNewBtn?.addEventListener("click", startNewRepository);
 repositoriesApplyBtn?.addEventListener("click", applyRepositories);
+tabJenkinsDemosBtn?.addEventListener("click", async () => {
+  setAdvancedTab("jenkins-demos");
+  await loadJenkinsDemos();
+});
+jenkinsDemosReloadBtn?.addEventListener("click", loadJenkinsDemos);
+jenkinsDemosDiscoverBtn?.addEventListener("click", discoverJenkinsDemos);
+jenkinsDemosApplyBtn?.addEventListener("click", applyJenkinsDemos);
 settingsDashboardTabBtn.addEventListener("click", () => setSettingsTab("dashboard"));
 settingsVaultTabBtn.addEventListener("click", () => setSettingsTab("vault"));
 dbTargetsSyncBtn?.addEventListener("click", () => syncDbTargetsRuntime());
