@@ -9,10 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from app.log_pipeline import LogPipeline  # noqa: E402
 from app.log_parsers import parse_with_chain  # noqa: E402
+from app.log_pipeline import LogPipeline  # noqa: E402
 from app.log_rules import LogRuleEngine  # noqa: E402
-from app.models import ParsedLogEntry  # noqa: E402
+from app.models import ParsedLogEntry, ServiceDefinition, ServiceLogSource  # noqa: E402
 
 CONFIG = ROOT / "backend" / "config"
 
@@ -60,8 +60,6 @@ def _pipeline() -> LogPipeline:
 
 
 def _entry(line: str):
-    from app.models import ServiceDefinition, ServiceLogSource
-
     service = ServiceDefinition(
         service_id="llm-jenkins-mcp",
         name="LLM Jenkins MCP",
