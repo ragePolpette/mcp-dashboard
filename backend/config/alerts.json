@@ -81,6 +81,41 @@
         "message": "Rate limiting frequente su Bitbucket API."
       }
     ],
+    "llm-jenkins-mcp": [
+      {
+        "id": "jenkins.auth_error.alert",
+        "name": "Errore auth Jenkins",
+        "kind": "event_count_threshold",
+        "event": "jenkins.auth_error",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "alert",
+        "message": "Errore di autenticazione Jenkins. Verifica utente e token nel vault."
+      },
+      {
+        "id": "jenkins.config_invalid.alert",
+        "name": "Avvio Jenkins MCP rifiutato",
+        "kind": "event_count_threshold",
+        "event": "jenkins.config_invalid",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "alert",
+        "message": "Il servizio Jenkins MCP ha rifiutato l'avvio: configurazione mancante o non valida."
+      },
+      {
+        "id": "jenkins.tool_error.warn",
+        "name": "Errori tool Jenkins",
+        "kind": "event_count_threshold",
+        "event": "jenkins.tool.error",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 3,
+        "severity": "warn",
+        "message": "Errori ripetuti nelle chiamate ai tool Jenkins."
+      }
+    ],
     "llm-db-dev-mcp": [
       {
         "id": "db.dev.max_rows.warn",
