@@ -202,6 +202,49 @@
         "add_tags": ["mcp", "session"]
       }
     ],
+    "llm-jenkins-mcp": [
+      {
+        "contains": "\"tool\":\"trigger_demo_deploy\"",
+        "add_tags": ["jenkins", "deploy"]
+      },
+      {
+        "regex": "\"tool\":\"trigger_demo_deploy\"[^\\n]*\"outcome\":\"ok\"",
+        "set": { "event": "jenkins.deploy.triggered", "level": "INFO" },
+        "add_tags": ["jenkins", "deploy", "write"]
+      },
+      {
+        "regex": "\"outcome\":\"rejected\"",
+        "set": { "event": "jenkins.tool.rejected", "level": "WARN" },
+        "add_tags": ["jenkins", "rejected"]
+      },
+      {
+        "regex": "\"outcome\":\"error\"",
+        "set": { "event": "jenkins.tool.error", "level": "ERROR" },
+        "add_tags": ["jenkins", "error"]
+      },
+      {
+        "contains": "\"tool\":\"get_demo_status\"",
+        "add_tags": ["jenkins", "read"]
+      },
+      {
+        "contains": "\"tool\":\"get_build_status\"",
+        "add_tags": ["jenkins", "read"]
+      },
+      {
+        "contains": "\"tool\":\"get_console_tail\"",
+        "add_tags": ["jenkins", "read"]
+      },
+      {
+        "regex": "HTTP (401|403)",
+        "set": { "event": "jenkins.auth_error", "level": "ERROR" },
+        "add_tags": ["jenkins", "security"]
+      },
+      {
+        "contains": "configurazione non valida",
+        "set": { "event": "jenkins.config_invalid", "level": "ERROR" },
+        "add_tags": ["jenkins", "startup"]
+      }
+    ],
     "llm-db-prod-mcp": [
       {
         "contains": "\"event\":\"db.query.executed\"",

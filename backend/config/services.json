@@ -618,6 +618,108 @@
           ]
         }
       ]
+    },
+    {
+      "id": "llm-jenkins-mcp",
+      "name": "LLM Jenkins MCP",
+      "kind": "ops",
+      "group": "runtime",
+      "capabilities": [
+        "logs",
+        "activity",
+        "alerts",
+        "runtime_options",
+        "health_details"
+      ],
+      "parser_chain": [
+        "json",
+        "llm_jenkins_mcp_event"
+      ],
+      "rule_sets": [
+        "llm-jenkins-mcp"
+      ],
+      "control": {
+        "workdir": "../../../llm-jenkins-mcp",
+        "start_command": [
+          "dotnet",
+          "run",
+          "--project",
+          "src/JenkinsDemoMcp",
+          "-c",
+          "Release"
+        ],
+        "host": "127.0.0.1",
+        "port": 8785,
+        "health_url": "http://127.0.0.1:8785/health",
+        "startup_timeout_sec": 20,
+        "pid_file": "../../runtime/pids/llm-jenkins-mcp.pid",
+        "stdout_log": "../../../tools/_dev_runtime_logs/llm-jenkins-mcp.out.log",
+        "stderr_log": "../../../tools/_dev_runtime_logs/llm-jenkins-mcp.err.log",
+        "env": {
+          "HOST": "127.0.0.1",
+          "PORT": "8785"
+        },
+        "options": [
+          {
+            "id": "jenkins_url",
+            "label": "Jenkins URL",
+            "type": "string",
+            "env_var": "JENKINS_URL",
+            "description": "URL base di Jenkins, raggiungibile dal container (es. http://host:porta).",
+            "secret": false,
+            "required": true,
+            "default": ""
+          },
+          {
+            "id": "jenkins_user",
+            "label": "Jenkins User",
+            "type": "string",
+            "env_var": "JENKINS_USER",
+            "description": "Utente Jenkins, preferibilmente un service user con Job/Read + Job/Build solo sul job consentito.",
+            "secret": false,
+            "required": true,
+            "default": ""
+          },
+          {
+            "id": "jenkins_token",
+            "label": "Jenkins API Token",
+            "type": "string",
+            "env_var": "JENKINS_TOKEN",
+            "description": "API token Jenkins. Solo dal vault (riferimento tipo vault://jenkins.demo.token). Solo in memoria, mai persistito.",
+            "secret": true,
+            "required": true,
+            "default": ""
+          },
+          {
+            "id": "jenkins_allowed_demos",
+            "label": "Demo consentite",
+            "type": "string",
+            "env_var": "JENKINS_ALLOWED_DEMOS",
+            "description": "Allowlist demo separata da virgole. Vuoto = default demo3..demo8; la demo secca resta esclusa finche' non la elenchi esplicitamente.",
+            "secret": false,
+            "required": false,
+            "default": ""
+          }
+        ]
+      },
+      "log_sources": [
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-jenkins-mcp.out.log",
+          "channel": "stdout",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        },
+        {
+          "path": "../../../tools/_dev_runtime_logs/llm-jenkins-mcp.err.log",
+          "channel": "stderr",
+          "tags": [
+            "dev",
+            "yetzirah"
+          ]
+        }
+      ]
     }
   ]
 }
