@@ -22,7 +22,6 @@ from app.jenkins_demo_registry import JenkinsDemoRegistry, normalize_registry  #
 from app.main import app  # noqa: E402
 from app.models import ServiceControlDefinition, ServiceDefinition  # noqa: E402
 
-
 # ---------- registry ----------
 
 
