@@ -223,6 +223,51 @@
         "add_tags": ["jenkins", "error"]
       },
       {
+        "regex": "\"tool\":\"trigger_demo_deploy\"[^\\n]*\"outcome\":\"queued\"",
+        "set": { "event": "jenkins.deploy.queued", "level": "INFO" },
+        "add_tags": ["jenkins", "deploy", "write", "queued"]
+      },
+      {
+        "regex": "\"tool\":\"trigger_demo_deploy\"[^\\n]*\"outcome\":\"confirm_required\"",
+        "set": { "event": "jenkins.deploy.confirm_required", "level": "INFO" },
+        "add_tags": ["jenkins", "deploy", "confirm"]
+      },
+      {
+        "regex": "\\] \\S+ confirm\\.requested \\{",
+        "set": { "event": "jenkins.confirm.requested", "level": "INFO" },
+        "add_tags": ["jenkins", "confirm"]
+      },
+      {
+        "regex": "\\] \\S+ confirm\\.used \\{",
+        "set": { "event": "jenkins.confirm.used", "level": "INFO" },
+        "add_tags": ["jenkins", "confirm", "write"]
+      },
+      {
+        "regex": "\\] \\S+ confirm\\.expired \\{",
+        "set": { "event": "jenkins.confirm.expired", "level": "WARN" },
+        "add_tags": ["jenkins", "confirm"]
+      },
+      {
+        "regex": "\\] \\S+ confirm\\.invalid \\{",
+        "set": { "event": "jenkins.confirm.invalid", "level": "WARN" },
+        "add_tags": ["jenkins", "confirm", "security"]
+      },
+      {
+        "regex": "\\] \\S+ admin\\.denied \\{",
+        "set": { "event": "jenkins.admin.denied", "level": "WARN" },
+        "add_tags": ["jenkins", "admin", "security"]
+      },
+      {
+        "regex": "\\] \\S+ admin\\.destinations \\{[^\\n]*\"outcome\":\"error\"",
+        "set": { "event": "jenkins.admin.discovery_failed", "level": "WARN" },
+        "add_tags": ["jenkins", "admin"]
+      },
+      {
+        "regex": "\\] \\S+ config\\.warning \\{",
+        "set": { "event": "jenkins.config_warning", "level": "WARN" },
+        "add_tags": ["jenkins", "startup"]
+      },
+      {
         "contains": "\"tool\":\"get_demo_status\"",
         "add_tags": ["jenkins", "read"]
       },

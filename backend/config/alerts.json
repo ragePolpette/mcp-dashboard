@@ -114,6 +114,39 @@
         "threshold": 3,
         "severity": "warn",
         "message": "Errori ripetuti nelle chiamate ai tool Jenkins."
+      },
+      {
+        "id": "jenkins.confirm_invalid.warn",
+        "name": "Conferma deploy Jenkins non valida",
+        "kind": "event_count_threshold",
+        "event": "jenkins.confirm.invalid",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "warn",
+        "message": "Un deploy Jenkins e' stato tentato con un token di conferma non valido, riusato o emesso per altri parametri."
+      },
+      {
+        "id": "jenkins.admin_denied.alert",
+        "name": "Accesso admin Jenkins MCP negato",
+        "kind": "event_count_threshold",
+        "event": "jenkins.admin.denied",
+        "window_minutes": 10,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "alert",
+        "message": "Richiesta agli endpoint /admin di Jenkins MCP senza chiave valida."
+      },
+      {
+        "id": "jenkins.config_warning.warn",
+        "name": "Avvisi di configurazione Jenkins MCP",
+        "kind": "event_count_threshold",
+        "event": "jenkins.config_warning",
+        "window_minutes": 60,
+        "op": ">=",
+        "threshold": 1,
+        "severity": "warn",
+        "message": "Jenkins MCP e' partito con avvisi di configurazione (es. JENKINS_ALLOWED_DEMOS ignorata)."
       }
     ],
     "llm-db-dev-mcp": [

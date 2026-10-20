@@ -21,6 +21,8 @@ from .alert_engine import AlertEngine
 from .bitbucket_repository_registry import BitbucketRepositoryRegistry
 from .dashboard_settings import DashboardSettingsManager
 from .db_target_registry import DbTargetRegistry
+from .jenkins_admin_client import JenkinsAdminClient, JenkinsAdminError
+from .jenkins_demo_registry import JenkinsDemoRegistry
 from .log_pipeline import LogPipeline, truncate_log_file
 from .log_rules import LogRuleEngine
 from .memory_admin_client import MemoryAdminClient, MemoryAdminProxyError
@@ -47,6 +49,8 @@ DB_TARGETS_STATE = RUNTIME_DIR / "db_targets.json"
 DB_TARGETS_RUNTIME_EXPORT = RUNTIME_DIR / "llm_sql_db_targets.runtime.json"
 DB_TARGETS_BOOTSTRAP = CONFIG_DIR / "db_targets.bootstrap.json"
 BITBUCKET_REPOSITORIES_STATE = RUNTIME_DIR / "bitbucket_repositories.json"
+JENKINS_DEMOS_STATE = RUNTIME_DIR / "jenkins_demo_policies.json"
+JENKINS_SERVICE_ID = "llm-jenkins-mcp"
 SESSION_TOKEN_FILE = RUNTIME_DIR / "dashboard_session.token"
 STATUS_POLL_INTERVAL_ENV = "MCP_DASHBOARD_STATUS_POLL_SECONDS"
 DEFAULT_STATUS_POLL_SECONDS = 3.0
@@ -62,6 +66,8 @@ options_manager = ServiceOptionsManager(OPTIONS_STATE, vault=vault_manager)
 options_manager.scrub_persisted_secrets(registry.list_services())
 settings_manager = DashboardSettingsManager(DASHBOARD_SETTINGS_STATE)
 bitbucket_repository_registry = BitbucketRepositoryRegistry(BITBUCKET_REPOSITORIES_STATE)
+jenkins_demo_registry = JenkinsDemoRegistry(JENKINS_DEMOS_STATE)
+jenkins_admin_client = JenkinsAdminClient()
 db_target_registry = DbTargetRegistry(
     DB_TARGETS_STATE,
     DB_TARGETS_RUNTIME_EXPORT,
@@ -149,6 +155,10 @@ class BitbucketRepositoryPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
 
+class JenkinsDemoRegistryPayload(BaseModel):
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
 class MemoryDistillationPreparePayload(BaseModel):
     agent_id: str = ""
     user_id: str | None = None
@@ -201,7 +211,12 @@ def _runtime_env_overrides(service) -> dict[str, str]:
         overrides.update(db_target_registry.runtime_env())
     if service.service_id == "llm-bitbucket-mcp":
         overrides.update(bitbucket_repository_registry.runtime_env())
+    if service.service_id == JENKINS_SERVICE_ID:
+        overrides.update(jenkins_demo_registry.runtime_env())
     overrides.update(options_manager.options_env(service))
+    if service.service_id == JENKINS_SERVICE_ID:
+        # After the options: the admin key is never taken from user configuration.
+        overrides.update(jenkins_admin_client.runtime_env())
     return overrides
 
 
@@ -781,6 +796,78 @@ def apply_bitbucket_repositories() -> dict[str, Any]:
             result = {"ok": True, "status": current_status}
             message = "Configurazione salvata; verra applicata al prossimo avvio del server Bitbucket."
         return {"ok": True, "message": message, "status": result.get("status")}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _jenkins_demos_payload() -> dict[str, Any]:
+    return {"registry": jenkins_demo_registry.snapshot()}
+
+
+@app.get("/api/jenkins-demos")
+def get_jenkins_demos() -> dict[str, Any]:
+    return _jenkins_demos_payload()
+
+
+@app.put("/api/jenkins-demos")
+def replace_jenkins_demos(payload: JenkinsDemoRegistryPayload) -> dict[str, Any]:
+    try:
+        jenkins_demo_registry.replace(payload.values)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, **_jenkins_demos_payload()}
+
+
+@app.post("/api/jenkins-demos/discover")
+def discover_jenkins_demos() -> dict[str, Any]:
+    """Destinations currently offered by the Jenkins job, read through the running MCP.
+
+    POST (not GET) so it goes through the dashboard CSRF/session checks: it makes the
+    MCP call Jenkins with the user's credentials.
+    """
+    service = _service_or_404(JENKINS_SERVICE_ID)
+    try:
+        choices = jenkins_admin_client.destinations(service)
+    except JenkinsAdminError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    return {"ok": True, **jenkins_demo_registry.classify(choices)}
+
+
+@app.post("/api/jenkins-demos/runtime/apply")
+def apply_jenkins_demos() -> dict[str, Any]:
+    service = _service_or_404(JENKINS_SERVICE_ID)
+    try:
+        env = _runtime_env_overrides(service)
+        current_status = process_manager.status(service, env_overrides=env)
+        if not current_status.get("running"):
+            return {
+                "ok": True,
+                "restarted": False,
+                "message": "Registro salvato; verra applicato al prossimo avvio del servizio Jenkins.",
+                "status": current_status,
+            }
+        try:
+            active = jenkins_admin_client.active_policies(service)
+        except JenkinsAdminError:
+            active = None  # older process or key from a previous dashboard run: restart to be sure
+        if active == jenkins_demo_registry.runtime_value():
+            return {
+                "ok": True,
+                "restarted": False,
+                "message": "Il servizio Jenkins usa gia questo registro: nessun riavvio.",
+                "status": current_status,
+            }
+        missing = options_manager.missing_required_options(service, env_overrides=env)
+        if missing:
+            raise ValueError("Configura le opzioni richieste prima di applicare: " + ", ".join(missing))
+        result = process_manager.restart(service, env_overrides=env)
+        status_monitor.invalidate(service.service_id)
+        return {
+            "ok": bool(result.get("ok")),
+            "restarted": True,
+            "message": "Registro applicato: servizio Jenkins riavviato.",
+            "status": result.get("status"),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

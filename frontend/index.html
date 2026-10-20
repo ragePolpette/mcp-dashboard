@@ -33,6 +33,7 @@
         <button id="tabOptionsBtn" class="advanced-tab active" type="button" role="tab" aria-selected="true">Opzioni</button>
         <button id="tabDbTargetsBtn" class="advanced-tab hidden" type="button" role="tab" aria-selected="false">DB Targets</button>
         <button id="tabRepositoriesBtn" class="advanced-tab hidden" type="button" role="tab" aria-selected="false">Repositories</button>
+        <button id="tabJenkinsDemosBtn" class="advanced-tab hidden" type="button" role="tab" aria-selected="false">Destinazioni</button>
         <button id="tabLogsBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Log</button>
         <button id="tabInspectorBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Inspector</button>
         <button id="tabMemoryBtn" class="advanced-tab" type="button" role="tab" aria-selected="false">Memory</button>
@@ -84,6 +85,25 @@
               <form id="repositoryEditorForm" class="db-target-editor-form"></form>
             </section>
           </div>
+        </section>
+      </div>
+
+      <div id="advancedJenkinsDemosView" class="advanced-view hidden">
+        <section class="settings-section">
+          <div class="db-targets-header">
+            <div>
+              <h3>Destinazioni Jenkins</h3>
+              <p id="jenkinsDemosSummary" class="muted">Registro destinazioni non caricato.</p>
+              <p class="muted">Le destinazioni utilizzabili sono i valori di DESTINAZIONE del job, letti da Jenkins. Qui scegli cosa può fare l'agente su ciascuna, per nome esatto: allow = deploy diretto, confirm = riepilogo e conferma in chat, deny = né deploy né letture. Le destinazioni non elencate usano la policy di default (mai allow).</p>
+            </div>
+            <div class="db-targets-actions">
+              <button id="jenkinsDemosApplyBtn" type="button" class="btn-ok">Applica al server Jenkins</button>
+              <button id="jenkinsDemosDiscoverBtn" type="button">Aggiorna da Jenkins</button>
+              <button id="jenkinsDemosReloadBtn" type="button">Ricarica</button>
+            </div>
+          </div>
+          <p id="jenkinsDemosFlash" class="settings-flash hidden" role="status" aria-live="polite"></p>
+          <form id="jenkinsDemosForm" class="db-target-editor-form"></form>
         </section>
       </div>
 
