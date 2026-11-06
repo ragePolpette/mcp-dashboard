@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- SQL targets with anonymization mode `deterministic` no longer need a provider or model: the registry stores provider `none` and an empty model, and the target editor disables both fields with a hint. `hybrid` and `llm-strict` still require them. Closes #74.
+
 ### Added
 
 - LLM Jenkins MCP > Destinazioni: registry of deploy destinations by exact name with an `allow`, `confirm` or `deny` policy, plus a default policy for unlisted destinations (`confirm` or `deny`, never `allow`). Stored in `runtime/jenkins_demo_policies.json` and passed to the service as `JENKINS_DEMO_POLICIES`.
