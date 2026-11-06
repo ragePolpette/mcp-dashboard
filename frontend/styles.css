@@ -1515,5 +1515,35 @@ tbody td {
   }
 }
 
+.sql-classifier-panel {
+  margin-top: 16px;
+}
 
+.sql-classifier-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.sql-classifier-actions input[type="number"] {
+  width: 80px;
+}
+
+.sql-classifier-table-wrap {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.sql-classifier-table code {
+  word-break: break-all;
+}
+
+.sql-classifier-log {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+}
 

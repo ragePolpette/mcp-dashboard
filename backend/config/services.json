@@ -498,6 +498,16 @@
             "default": "http://127.0.0.1:11434"
           },
           {
+            "id": "anon_classifier_model",
+            "label": "Modello classificatore schema",
+            "type": "string",
+            "env_var": "ANON_CLASSIFIER_MODEL",
+            "description": "Modello locale (Ollama) usato solo dal pulsante Classifica schema, mai sulle query.",
+            "secret": false,
+            "required": false,
+            "default": "qwen2.5:3b-instruct"
+          },
+          {
             "id": "anon_fail_open",
             "label": "ANON Fail Open",
             "type": "boolean",

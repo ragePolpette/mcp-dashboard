@@ -4165,6 +4165,7 @@ function renderDbTargetsPanel() {
   dbTargetEditorForm.querySelector("#dbTargetDisableBtn")?.addEventListener("click", disableSelectedDbTarget);
   dbTargetEditorForm.querySelector("#dbTargetEnableBtn")?.addEventListener("click", enableSelectedDbTarget);
   if (typeof renderSqlConnectionPanel === "function") renderSqlConnectionPanel();
+  if (typeof renderSqlClassifierPanel === "function") renderSqlClassifierPanel();
 }
 
 function handleDbTargetToolChange(event) {
@@ -5415,3 +5416,271 @@ boot().catch(err => {
 
 
 
+
+// --- Schema classification ("Classifica schema") -------------------------------------------------
+// Runs the SQL MCP classifier on demand: metadata only, proposals reviewed here, accepted proposals
+// become human verdicts in the anonymization catalog. Nothing changes until a proposal is accepted.
+
+const sqlClassifierPanel = document.getElementById("sqlClassifierPanel");
+const SQL_CLASSIFIER_KINDS = ["name", "org", "email", "phone", "address", "city", "text", "date", "iban"];
+const SQL_CLASSIFIER_FILTERS = [
+  ["review", "Da rivedere"],
+  ["proposed-sensitive", "Proposte sensibili"],
+  ["proposed-safe", "Proposte in chiaro"],
+  ["rejected", "Scartate"],
+  ["all", "Tutte"]
+];
+const sqlClassifierState = {
+  loaded: false,
+  busy: false,
+  status: null,
+  proposals: [],
+  runs: [],
+  filter: "review",
+  selected: new Set(),
+  evalCount: 200,
+  kind: "text",
+  flash: "",
+  flashTone: "info",
+  pollTimer: null
+};
+
+function sqlClassifierTargetId() {
+  const id = dbTargetsState?.selectedId;
+  return id && id !== "__new__" ? id : "";
+}
+
+function setSqlClassifierFlash(message, tone = "info") {
+  sqlClassifierState.flash = message;
+  sqlClassifierState.flashTone = tone;
+  renderSqlClassifierPanel();
+}
+
+async function loadSqlClassifierProposals() {
+  const payload = await apiJson(`/api/sql-classifier/proposals?status=${encodeURIComponent(sqlClassifierState.filter)}`);
+  sqlClassifierState.proposals = Array.isArray(payload.proposals) ? payload.proposals : [];
+  sqlClassifierState.runs = Array.isArray(payload.runs) ? payload.runs : [];
+  const keys = new Set(sqlClassifierState.proposals.map(item => item.key));
+  sqlClassifierState.selected = new Set([...sqlClassifierState.selected].filter(key => keys.has(key)));
+}
+
+async function refreshSqlClassifier({ proposals = true } = {}) {
+  try {
+    sqlClassifierState.status = await apiJson("/api/sql-classifier/status");
+    if (proposals) await loadSqlClassifierProposals();
+    sqlClassifierState.loaded = true;
+  } catch (error) {
+    sqlClassifierState.loaded = true;
+    sqlClassifierState.flash = `Classificatore non disponibile: ${error.message}`;
+    sqlClassifierState.flashTone = "error";
+  }
+  scheduleSqlClassifierPoll();
+  renderSqlClassifierPanel();
+}
+
+function scheduleSqlClassifierPoll() {
+  if (sqlClassifierState.pollTimer) {
+    clearTimeout(sqlClassifierState.pollTimer);
+    sqlClassifierState.pollTimer = null;
+  }
+  if (sqlClassifierState.status?.running) {
+    sqlClassifierState.pollTimer = setTimeout(async () => {
+      const wasRunning = sqlClassifierState.status?.running;
+      try {
+        sqlClassifierState.status = await apiJson("/api/sql-classifier/status");
+        if (wasRunning && !sqlClassifierState.status.running) await loadSqlClassifierProposals();
+      } catch (error) {
+        sqlClassifierState.flash = `Errore stato classificatore: ${error.message}`;
+        sqlClassifierState.flashTone = "error";
+      }
+      scheduleSqlClassifierPoll();
+      renderSqlClassifierPanel();
+    }, 3000);
+  }
+}
+
+async function startSqlClassifier(evalMode) {
+  const targetId = sqlClassifierTargetId();
+  if (!targetId) return;
+  sqlClassifierState.busy = true;
+  renderSqlClassifierPanel();
+  try {
+    const body = { target_id: targetId };
+    if (evalMode) body.eval_count = Math.max(1, Math.min(5000, Number(sqlClassifierState.evalCount) || 200));
+    sqlClassifierState.status = await apiJson("/api/sql-classifier/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    sqlClassifierState.flash = evalMode
+      ? "Valutazione avviata: nessuna proposta verra salvata."
+      : "Classificazione avviata: legge solo nomi e tipi delle colonne.";
+    sqlClassifierState.flashTone = "info";
+  } catch (error) {
+    sqlClassifierState.flash = `Avvio non riuscito: ${error.message}`;
+    sqlClassifierState.flashTone = "error";
+  } finally {
+    sqlClassifierState.busy = false;
+  }
+  scheduleSqlClassifierPoll();
+  renderSqlClassifierPanel();
+}
+
+async function decideSqlClassifierProposals(action, extra = {}) {
+  const keys = [...sqlClassifierState.selected];
+  if (keys.length === 0) {
+    setSqlClassifierFlash("Seleziona almeno una colonna.", "error");
+    return;
+  }
+  sqlClassifierState.busy = true;
+  renderSqlClassifierPanel();
+  try {
+    const result = await apiJson(`/api/sql-classifier/${action}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keys, ...extra })
+    });
+    if (action === "accept") {
+      const skipped = (result.skipped || []).length;
+      sqlClassifierState.flash = `Accettate ${(result.accepted || []).length} colonne` + (skipped ? `, ${skipped} saltate (le proposte da rivedere richiedono "in chiaro" o "sensibile").` : ".");
+    } else {
+      sqlClassifierState.flash = `Scartate ${(result.rejected || []).length} proposte.`;
+    }
+    sqlClassifierState.flashTone = "success";
+    sqlClassifierState.selected = new Set();
+    await loadSqlClassifierProposals();
+  } catch (error) {
+    sqlClassifierState.flash = `Operazione non riuscita: ${error.message}`;
+    sqlClassifierState.flashTone = "error";
+  } finally {
+    sqlClassifierState.busy = false;
+  }
+  renderSqlClassifierPanel();
+}
+
+function describeSqlClassifierStatus(status) {
+  if (!status) return "Nessuna esecuzione in questa sessione.";
+  const run = status.run || {};
+  const progress = status.progress || {};
+  if (status.running) {
+    if (progress.state === "reading-schema") return `In corso su ${run.target_id}: lettura dello schema...`;
+    if (progress.total) return `In corso su ${run.target_id}: lotto ${progress.done ?? 0} di ${progress.total}.`;
+    return `In corso su ${run.target_id}...`;
+  }
+  if (status.exit_code === null || status.exit_code === undefined) return "Nessuna esecuzione in questa sessione.";
+  if (status.exit_code !== 0) {
+    return `Ultima esecuzione fallita: ${progress.error || "vedi log"}`;
+  }
+  const report = status.report || {};
+  const counts = report.counts || {};
+  const parts = Object.entries(counts).map(([key, value]) => `${key} ${value}`).join(", ") || "nessuna colonna nuova";
+  if (report.mode === "eval" && report.metrics) {
+    const m = report.metrics;
+    const pct = value => (value === null || value === undefined ? "n/d" : `${Math.round(value * 1000) / 10}%`);
+    return `Valutazione (${report.model}) su ${m.total} colonne: precisione "in chiaro" ${pct(m.safe_precision)}, sensibili riconosciute ${pct(m.sensitive_recall)}, da rivedere ${pct(m.review_rate)}, falsi "in chiaro" ${m.unsafe_leaks.length}.`;
+  }
+  return `Ultima classificazione (${report.model || run.model}): ${parts}. Errori modello: ${(report.errors || []).length}.`;
+}
+
+function renderSqlClassifierPanel() {
+  if (!sqlClassifierPanel) return;
+  const targetId = sqlClassifierTargetId();
+  if (!targetId) {
+    sqlClassifierPanel.innerHTML = `<h4>Classifica schema</h4><p class="muted">Seleziona un target salvato per classificarne lo schema.</p>`;
+    return;
+  }
+  if (!sqlClassifierState.loaded) {
+    sqlClassifierState.loaded = true;
+    refreshSqlClassifier();
+  }
+  const state = sqlClassifierState;
+  const running = Boolean(state.status?.running);
+  const disabled = running || state.busy ? "disabled" : "";
+  const leaks = state.status?.report?.metrics?.unsafe_leaks || [];
+  const logTail = state.status?.log_tail || [];
+  const rows = state.proposals.map(item => {
+    const checked = state.selected.has(item.key) ? "checked" : "";
+    const signals = item.signals
+      ? Object.entries(item.signals).map(([name, value]) => `${name} ${value}`).join(", ")
+      : "";
+    return `<tr>
+      <td><input type="checkbox" data-sql-classifier-key="${escapeHtml(item.key)}" ${checked}></td>
+      <td><code>${escapeHtml(item.key)}</code></td>
+      <td>${escapeHtml(item.status)}</td>
+      <td>${escapeHtml(item.kind || "")}</td>
+      <td>${escapeHtml(item.source || "")}${item.model ? ` <span class="muted">${escapeHtml(item.model)}</span>` : ""}</td>
+      <td title="${escapeHtml(signals)}">${escapeHtml(item.reason || "")}</td>
+    </tr>`;
+  }).join("");
+  sqlClassifierPanel.innerHTML = `
+    <h4>Classifica schema</h4>
+    <p class="muted">Legge solo nomi e tipi delle colonne di <strong>${escapeHtml(targetId)}</strong> (mai i valori), decide con le regole quello che può e chiede al modello locale le colonne rimaste. Le proposte non cambiano nulla finché non le accetti: accettate diventano verdetti del catalogo.</p>
+    <div class="sql-classifier-actions">
+      <button type="button" id="sqlClassifierRunBtn" class="btn-ok" ${disabled}>Classifica schema</button>
+      <label>Valuta su <input id="sqlClassifierEvalCount" type="number" min="1" max="5000" value="${escapeHtml(state.evalCount)}"> colonne già marcate</label>
+      <button type="button" id="sqlClassifierEvalBtn" ${disabled}>Valuta modello</button>
+      <button type="button" id="sqlClassifierRefreshBtn">Aggiorna</button>
+    </div>
+    <p class="muted">${escapeHtml(describeSqlClassifierStatus(state.status))}</p>
+    ${leaks.length ? `<p class="db-target-inline-hint">Colonne che il modello avrebbe lasciato in chiaro ma sono sensibili: ${leaks.slice(0, 20).map(key => `<code>${escapeHtml(key)}</code>`).join(", ")}${leaks.length > 20 ? " ..." : ""}</p>` : ""}
+    ${logTail.length ? `<pre class="sql-classifier-log">${escapeHtml(logTail.join("\n"))}</pre>` : ""}
+    ${state.flash ? `<p class="settings-flash settings-flash-${escapeHtml(state.flashTone)}">${escapeHtml(state.flash)}</p>` : ""}
+    <div class="sql-classifier-actions">
+      <label>Mostra <select id="sqlClassifierFilter">${SQL_CLASSIFIER_FILTERS.map(([value, label]) => `<option value="${value}" ${state.filter === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      <span class="muted">${state.proposals.length} proposte, ${state.selected.size} selezionate</span>
+    </div>
+    <div class="sql-classifier-actions">
+      <button type="button" id="sqlClassifierAcceptBtn" class="btn-ok" ${state.busy ? "disabled" : ""}>Accetta proposta</button>
+      <button type="button" id="sqlClassifierSafeBtn" ${state.busy ? "disabled" : ""}>Segna in chiaro</button>
+      <button type="button" id="sqlClassifierSensitiveBtn" ${state.busy ? "disabled" : ""}>Segna sensibile come</button>
+      <select id="sqlClassifierKind">${SQL_CLASSIFIER_KINDS.map(kind => `<option value="${kind}" ${state.kind === kind ? "selected" : ""}>${kind}</option>`).join("")}</select>
+      <button type="button" id="sqlClassifierRejectBtn" class="btn-warn" ${state.busy ? "disabled" : ""}>Scarta</button>
+    </div>
+    <div class="sql-classifier-table-wrap">
+      <table class="jenkins-demos-table sql-classifier-table">
+        <thead><tr><th><input type="checkbox" id="sqlClassifierSelectAll"></th><th>Colonna</th><th>Proposta</th><th>Tipo</th><th>Fonte</th><th>Motivo</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="6" class="muted">Nessuna proposta in questo filtro.</td></tr>`}</tbody>
+      </table>
+    </div>
+  `;
+
+  sqlClassifierPanel.querySelector("#sqlClassifierRunBtn")?.addEventListener("click", () => startSqlClassifier(false));
+  sqlClassifierPanel.querySelector("#sqlClassifierEvalBtn")?.addEventListener("click", () => startSqlClassifier(true));
+  sqlClassifierPanel.querySelector("#sqlClassifierRefreshBtn")?.addEventListener("click", () => refreshSqlClassifier());
+  sqlClassifierPanel.querySelector("#sqlClassifierEvalCount")?.addEventListener("change", event => {
+    sqlClassifierState.evalCount = Number(event.target.value) || 200;
+  });
+  sqlClassifierPanel.querySelector("#sqlClassifierFilter")?.addEventListener("change", async event => {
+    sqlClassifierState.filter = event.target.value;
+    sqlClassifierState.selected = new Set();
+    try {
+      await loadSqlClassifierProposals();
+    } catch (error) {
+      sqlClassifierState.flash = `Errore caricamento proposte: ${error.message}`;
+      sqlClassifierState.flashTone = "error";
+    }
+    renderSqlClassifierPanel();
+  });
+  sqlClassifierPanel.querySelector("#sqlClassifierKind")?.addEventListener("change", event => {
+    sqlClassifierState.kind = event.target.value;
+  });
+  sqlClassifierPanel.querySelector("#sqlClassifierSelectAll")?.addEventListener("change", event => {
+    sqlClassifierState.selected = event.target.checked ? new Set(sqlClassifierState.proposals.map(item => item.key)) : new Set();
+    renderSqlClassifierPanel();
+  });
+  sqlClassifierPanel.querySelectorAll("[data-sql-classifier-key]").forEach(input => {
+    input.addEventListener("change", event => {
+      const key = event.target.dataset.sqlClassifierKey;
+      if (event.target.checked) sqlClassifierState.selected.add(key);
+      else sqlClassifierState.selected.delete(key);
+      const counter = sqlClassifierPanel.querySelector(".sql-classifier-actions .muted");
+      if (counter) counter.textContent = `${sqlClassifierState.proposals.length} proposte, ${sqlClassifierState.selected.size} selezionate`;
+    });
+  });
+  sqlClassifierPanel.querySelector("#sqlClassifierAcceptBtn")?.addEventListener("click", () => decideSqlClassifierProposals("accept"));
+  sqlClassifierPanel.querySelector("#sqlClassifierSafeBtn")?.addEventListener("click", () => decideSqlClassifierProposals("accept", { as_verdict: "safe" }));
+  sqlClassifierPanel.querySelector("#sqlClassifierSensitiveBtn")?.addEventListener("click", () =>
+    decideSqlClassifierProposals("accept", { as_verdict: "sensitive", kind: sqlClassifierState.kind })
+  );
+  sqlClassifierPanel.querySelector("#sqlClassifierRejectBtn")?.addEventListener("click", () => decideSqlClassifierProposals("reject"));
+}
