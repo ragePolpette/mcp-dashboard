@@ -17,6 +17,7 @@ A local control plane for running and observing a workstation-scale MCP stack fr
 - Normalized logs from multiple service-specific parsers, with filtering, alerts, and activity views
 - Reusable local secrets stored through `vault://` references, without exposing cleartext values in the UI
 - Runtime-editable SQL targets exported for `llm-sql-db-mcp`
+- "Classifica schema" for SQL targets: runs the `llm-sql-db-mcp` schema classifier (metadata only, local model), shows progress and a "Valuta modello" precision check, and lets you accept or reject the proposed column verdicts
 - `llm-memory` admin views for summary, audit, projects, fast-memory candidates, and distillation runs
 
 ## Architecture
@@ -90,6 +91,7 @@ Main API endpoints:
 - `GET /api/services/{service_id}/logs`
 - `GET /api/vault`
 - `GET /api/db-targets`
+- `POST /api/sql-classifier/run`, `GET /api/sql-classifier/status`, `GET /api/sql-classifier/proposals`, `POST /api/sql-classifier/accept`, `POST /api/sql-classifier/reject`
 - `GET /api/session` (returns the session token, see Security)
 - `GET /api/services/{service_id}/memory-admin/summary`
 - `GET /api/services/{service_id}/memory-admin/candidates`
