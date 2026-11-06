@@ -418,10 +418,17 @@ class DbTargetRegistry:
                 raise ValueError("Invalid anonymization mode.")
             if anonymization_mode == "off":
                 raise ValueError("anonymization mode cannot be off when enabled.")
-            if anonymization_provider not in ALLOWED_ANONYMIZATION_PROVIDERS or anonymization_provider == "none":
-                raise ValueError("anonymization provider is required when anonymization is enabled.")
-            if not anonymization_model:
-                raise ValueError("anonymization model is required when anonymization is enabled.")
+            if anonymization_provider not in ALLOWED_ANONYMIZATION_PROVIDERS:
+                raise ValueError("Invalid anonymization provider.")
+            if anonymization_mode == "deterministic":
+                # Rules, catalog and value floor only: the SQL MCP never calls a provider in this mode.
+                anonymization_provider = "none"
+                anonymization_model = ""
+            else:
+                if anonymization_provider == "none":
+                    raise ValueError("anonymization provider is required for this anonymization mode.")
+                if not anonymization_model:
+                    raise ValueError("anonymization model is required for this anonymization mode.")
         else:
             anonymization_mode = "off"
             anonymization_provider = "none"

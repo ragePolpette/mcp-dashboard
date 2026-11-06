@@ -186,3 +186,55 @@ def test_vault_status_includes_db_target_registry_ref_usage(monkeypatch):
         for usages in payload["ref_usage"].values():
             for usage in usages:
                 assert set(usage) in ({"service_id", "option_id"}, {"target_id", "field_id"})
+
+
+def _anonymized_target(target_id: str, mode: str, provider: str, model: str) -> dict:
+    return {
+        "values": {
+            "target_id": target_id,
+            "display_name": target_id,
+            "environment": "qa",
+            "status": "active",
+            "connection_vault_ref": f"vault://db.{target_id}",
+            "policy": {"read_enabled": True, "write_policy": "deny"},
+            "anonymization": {"enabled": True, "mode": mode, "provider": provider, "model": model},
+            "limits": {"max_rows": 100, "max_result_bytes": 90000},
+        }
+    }
+
+
+def test_deterministic_anonymization_needs_no_provider_or_model(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        registry, _vault = _make_registry(tmp)
+        monkeypatch.setattr("app.main.process_manager.status", lambda service, **_kwargs: {"running": False})
+        monkeypatch.setattr("app.main.db_target_registry", registry)
+        client = dashboard_client(app)
+
+        created = client.post("/api/db-targets", json=_anonymized_target("qa-det", "deterministic", "none", ""))
+        assert created.status_code == 200, created.text
+        anonymization = created.json()["target"]["anonymization"]
+        assert anonymization["enabled"] is True
+        assert anonymization["mode"] == "deterministic"
+        assert anonymization["provider"] == "none"
+
+        # A provider set by mistake is dropped: deterministic never calls it.
+        with_provider = client.post("/api/db-targets", json=_anonymized_target("qa-det2", "deterministic", "ollama", "m"))
+        assert with_provider.status_code == 200, with_provider.text
+        assert with_provider.json()["target"]["anonymization"]["provider"] == "none"
+        assert with_provider.json()["target"]["anonymization"]["model"] == ""
+
+
+def test_provider_based_anonymization_modes_still_require_provider_and_model(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        registry, _vault = _make_registry(tmp)
+        monkeypatch.setattr("app.main.process_manager.status", lambda service, **_kwargs: {"running": False})
+        monkeypatch.setattr("app.main.db_target_registry", registry)
+        client = dashboard_client(app)
+
+        for index, mode in enumerate(["hybrid", "llm-strict"]):
+            no_provider = client.post("/api/db-targets", json=_anonymized_target(f"qa-p{index}", mode, "none", "m"))
+            assert no_provider.status_code >= 400, mode
+            no_model = client.post("/api/db-targets", json=_anonymized_target(f"qa-m{index}", mode, "ollama", ""))
+            assert no_model.status_code >= 400, mode
+            ok = client.post("/api/db-targets", json=_anonymized_target(f"qa-ok{index}", mode, "ollama", "m"))
+            assert ok.status_code == 200, ok.text
