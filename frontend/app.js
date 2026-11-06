@@ -3831,6 +3831,10 @@ function normalizeDbTargetDraft(target) {
     draft.anonymization_mode = "off";
     draft.llm_provider = "none";
     draft.llm_model = "";
+  } else if (draft.anonymization_mode === "deterministic") {
+    // Deterministic anonymization never calls a provider: nothing to configure.
+    draft.llm_provider = "none";
+    draft.llm_model = "";
   }
   draft.write_enabled = draft.write_policy === "allow";
   return draft;
@@ -4094,15 +4098,16 @@ function renderDbTargetsPanel() {
         </div>
         <div class="db-target-field">
           <label for="dbTargetProviderInput">Provider</label>
-          <select id="dbTargetProviderInput" data-db-target-field="llm_provider">
+          <select id="dbTargetProviderInput" data-db-target-field="llm_provider" ${draft.anonymization_mode === "deterministic" ? "disabled" : ""}>
             ${["none", "lmstudio", "ollama"].map(value => `<option value="${value}" ${draft.llm_provider === value ? "selected" : ""}>${value}</option>`).join("")}
           </select>
         </div>
         <div class="db-target-field">
           <label for="dbTargetModelInput">Model</label>
-          <input id="dbTargetModelInput" data-db-target-field="llm_model" type="text" value="${escapeHtml(draft.llm_model)}">
+          <input id="dbTargetModelInput" data-db-target-field="llm_model" type="text" value="${escapeHtml(draft.llm_model)}" ${draft.anonymization_mode === "deterministic" ? "disabled" : ""}>
         </div>
       </div>
+      ${draft.anonymization_enabled && draft.anonymization_mode === "deterministic" ? `<div class="db-target-inline-hint">Modo deterministic: solo regole, catalogo e floor sui valori; nessun provider LLM viene chiamato.</div>` : ""}
       ${prod ? `<div class="db-target-inline-hint">Target prod: scrittura disabilitata. Se disattivi l’anonimizzazione, le letture restituiscono i dati originali.</div>` : ""}
     </div>
     <div class="db-target-editor-section">
