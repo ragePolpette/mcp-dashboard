@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- DB Targets > **Classifica schema**: runs the SQL MCP schema classifier (`anon-catalog classify`) for the selected target with the SQL service environment (connection from the vault, catalog path), one run at a time, with progress, a "Valuta modello" mode that measures precision against existing verdicts, and a proposals table to accept (as proposed, as safe, as sensitive with a kind) or reject. Proposals change nothing until accepted; accepted ones become human verdicts in the anonymization catalog. API: `POST /api/sql-classifier/run`, `GET /api/sql-classifier/status`, `GET /api/sql-classifier/proposals`, `POST /api/sql-classifier/accept`, `POST /api/sql-classifier/reject`. Column keys from the browser are validated and passed after `--`, so they cannot become CLI options.
+- LLM SQL DB MCP option `ANON_CLASSIFIER_MODEL` (local model used only by the classifier).
+
 ### Changed
 
 - SQL targets with anonymization mode `deterministic` no longer need a provider or model: the registry stores provider `none` and an empty model, and the target editor disables both fields with a hint. `hybrid` and `llm-strict` still require them. Closes #74.

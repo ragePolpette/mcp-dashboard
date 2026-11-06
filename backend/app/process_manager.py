@@ -215,6 +215,10 @@ class ServiceProcessManager:
             return None
         return path.open("a", encoding="utf-8")
 
+    def build_process_env(self, service: ServiceDefinition, env_overrides: dict[str, str] | None = None) -> dict[str, str]:
+        """Environment a process of this service would get (used to run its CLIs with the same settings)."""
+        return self._build_process_env(self._require_control(service), env_overrides=env_overrides)
+
     def _build_process_env(
         self,
         control: ServiceControlDefinition,

@@ -31,6 +31,7 @@ from .secret_vault import DashboardSecretVault, LocalSecretVaultError
 from .security import REQUESTED_WITH_HEADER, REQUESTED_WITH_VALUE, DashboardSecurityMiddleware, SessionToken
 from .service_options import ServiceOptionsManager
 from .services_registry import ServiceRegistry
+from .sql_classifier import SqlClassifierError, SqlClassifierRunner
 from .sql_connections import read_connection_profile, save_connection_profile
 from .status_monitor import ServiceStatusMonitor
 
@@ -147,6 +148,20 @@ class VaultEntryPayload(BaseModel):
     value: str = ""
 
 
+class SqlClassifierRunPayload(BaseModel):
+    target_id: str
+    model: str | None = None
+    eval_count: int | None = Field(default=None, ge=1, le=5000)
+    force: bool = False
+
+
+class SqlClassifierDecisionPayload(BaseModel):
+    keys: list[str] = Field(default_factory=list)
+    as_verdict: str | None = None
+    kind: str | None = None
+    status: str | None = None
+
+
 class DbTargetPayload(BaseModel):
     values: dict[str, Any] = Field(default_factory=dict)
 
@@ -188,6 +203,26 @@ def _service_or_404(service_id: str):
     if service is None:
         raise HTTPException(status_code=404, detail=f"Unknown service: {service_id}")
     return service
+
+
+SQL_SERVICE_ID = "llm-sql-db-mcp"
+
+
+def _sql_service_env() -> tuple[Any, dict[str, str]]:
+    service = _service_or_404(SQL_SERVICE_ID)
+    if service.control is None:
+        raise SqlClassifierError("Servizio SQL senza configurazione di avvio.", 409)
+    return service.control, process_manager.build_process_env(service, env_overrides=_runtime_env_overrides(service))
+
+
+sql_classifier = SqlClassifierRunner(RUNTIME_DIR / "classifier", _sql_service_env)
+
+
+def _classifier_call(fn, *args, **kwargs) -> dict[str, Any]:
+    try:
+        return fn(*args, **kwargs)
+    except SqlClassifierError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 def _db_target_or_404(target_id: str) -> dict[str, Any]:
@@ -973,6 +1008,40 @@ def update_db_target(target_id: str, payload: DbTargetPayload) -> dict[str, Any]
         status_code = 404 if "Unknown target_id" in detail else 400
         raise HTTPException(status_code=status_code, detail=detail) from exc
     return {"ok": True, "target": target}
+
+
+@app.post("/api/sql-classifier/run")
+def run_sql_classifier(payload: SqlClassifierRunPayload) -> dict[str, Any]:
+    """Starts the schema classification (metadata only) for a target; proposals are reviewed by hand."""
+    _db_target_or_404(payload.target_id)
+    status = _classifier_call(
+        sql_classifier.start, payload.target_id, model=(payload.model or "").strip() or None,
+        eval_count=payload.eval_count, force=payload.force,
+    )
+    return {"ok": True, **status}
+
+
+@app.get("/api/sql-classifier/status")
+def sql_classifier_status() -> dict[str, Any]:
+    return {"ok": True, **sql_classifier.status()}
+
+
+@app.get("/api/sql-classifier/proposals")
+def sql_classifier_proposals(status: str = Query(default="all")) -> dict[str, Any]:
+    return {"ok": True, **_classifier_call(sql_classifier.proposals, status)}
+
+
+@app.post("/api/sql-classifier/accept")
+def accept_sql_classifier_proposals(payload: SqlClassifierDecisionPayload) -> dict[str, Any]:
+    result = _classifier_call(
+        sql_classifier.accept, payload.keys, as_verdict=payload.as_verdict, kind=payload.kind, status=payload.status,
+    )
+    return {"ok": True, **result}
+
+
+@app.post("/api/sql-classifier/reject")
+def reject_sql_classifier_proposals(payload: SqlClassifierDecisionPayload) -> dict[str, Any]:
+    return {"ok": True, **_classifier_call(sql_classifier.reject, payload.keys)}
 
 
 @app.post("/api/db-targets/{target_id}/disable")
