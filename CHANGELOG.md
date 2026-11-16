@@ -4,6 +4,7 @@
 
 ### Added
 
+- DB Targets > Policy: **Consenti variazioni schema (DDL)** checkbox per target (`ddl_enabled`, off by default). Turning it on adds `db_ddl` to the target's tools and exports `ddl_enabled` to the SQL MCP runtime file; it is forced off on prod targets and on targets with anonymization (the checkbox is disabled there), and the tool is not exported for disabled targets. Requires a `llm-sql-db-mcp` build that has the `db_ddl` tool.
 - DB Targets > **Classifica schema**: runs the SQL MCP schema classifier (`anon-catalog classify`) for the selected target with the SQL service environment (connection from the vault, catalog path), one run at a time, with progress, a "Valuta modello" mode that measures precision against existing verdicts, and a proposals table to accept (as proposed, as safe, as sensitive with a kind) or reject. Proposals change nothing until accepted; accepted ones become human verdicts in the anonymization catalog. API: `POST /api/sql-classifier/run`, `GET /api/sql-classifier/status`, `GET /api/sql-classifier/proposals`, `POST /api/sql-classifier/accept`, `POST /api/sql-classifier/reject`. Column keys from the browser are validated and passed after `--`, so they cannot become CLI options.
 - LLM SQL DB MCP option `ANON_CLASSIFIER_MODEL` (local model used only by the classifier).
 

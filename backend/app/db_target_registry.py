@@ -185,6 +185,19 @@ def _default_bootstrap_targets() -> list[dict[str, Any]]:
     ]
 
 
+def _runtime_allowed_tools(allowed_tools: list[str], policy: dict[str, Any], status: Any) -> list[str]:
+    """Tool esposti dal server MCP: db_write e db_ddl solo se la policy li abilita e il target e' attivo."""
+    tools = [
+        tool
+        for tool in allowed_tools
+        if (tool != "db_write" or policy.get("write_policy") == "allow")
+        and (tool != "db_ddl" or bool(policy.get("ddl_enabled", False)))
+    ]
+    if status != "active":
+        tools = [tool for tool in tools if tool not in {"db_write", "db_ddl"}]
+    return tools
+
+
 class DbTargetRegistry:
     """Persistent registry and runtime exporter for SQL MCP DB targets."""
 
@@ -282,7 +295,7 @@ class DbTargetRegistry:
         # Flat editor payloads must override persisted nested sections.
         aliases = {
             "connection": {"connection_env_var": "env_var", "connection_vault_ref": "vault_ref"},
-            "policy": {"read_enabled": "read_enabled", "write_policy": "write_policy"},
+            "policy": {"read_enabled": "read_enabled", "write_policy": "write_policy", "ddl_enabled": "ddl_enabled"},
             "limits": {"max_rows": "max_rows", "max_result_bytes": "max_result_bytes"},
             "anonymization": {"anonymization_enabled": "enabled", "anonymization_mode": "mode",
                               "anonymization_provider": "provider", "anonymization_model": "model",
@@ -345,6 +358,12 @@ class DbTargetRegistry:
             raise ValueError("write_policy must be allow, approval_required, or deny.")
         if environment == "prod":
             write_policy = "deny"
+        ddl_enabled = _clean_bool(
+            policy_raw.get("ddl_enabled")
+            if "ddl_enabled" in policy_raw
+            else source.get("ddl_enabled", policy_existing.get("ddl_enabled", False)),
+            fallback=False,
+        )
 
         anonymization_existing = (
             existing or {}
@@ -387,6 +406,10 @@ class DbTargetRegistry:
             else source.get("max_result_bytes", limits_existing.get("max_result_bytes", 131072)),
         )
 
+        # Variazioni schema (DDL): mai su prod e mai su target anonimizzati; il server MCP le rifiuta comunque.
+        if environment == "prod" or anonymization_enabled:
+            ddl_enabled = False
+
         allowed_tools = _unique_text_list(
             source.get("allowed_tools"),
             fallback=DEFAULT_ALLOWED_TOOLS,
@@ -395,15 +418,15 @@ class DbTargetRegistry:
             (existing or {}).get("allowed_tools"),
             fallback=DEFAULT_ALLOWED_TOOLS,
         )
+        allowed_tools_untouched = allowed_tools == existing_allowed_tools
         write_policy_turned_on = (
             write_policy == "allow" and policy_existing.get("write_policy") != "allow"
         )
-        if (
-            write_policy_turned_on
-            and "db_write" not in allowed_tools
-            and allowed_tools == existing_allowed_tools
-        ):
+        if write_policy_turned_on and "db_write" not in allowed_tools and allowed_tools_untouched:
             allowed_tools = [*allowed_tools, "db_write"]
+        ddl_turned_on = ddl_enabled and not policy_existing.get("ddl_enabled", False)
+        if ddl_turned_on and "db_ddl" not in allowed_tools and allowed_tools_untouched:
+            allowed_tools = [*allowed_tools, "db_ddl"]
 
         state_existing = (existing or {}).get("state", {}) if isinstance((existing or {}).get("state"), dict) else {}
         state_raw = self._merge_section(source, existing or {}, "state")
@@ -448,6 +471,7 @@ class DbTargetRegistry:
                 "read_enabled": read_enabled,
                 "write_policy": write_policy,
                 "write_enabled": write_policy == "allow",
+                "ddl_enabled": ddl_enabled,
             },
             "anonymization": {
                 "enabled": anonymization_enabled,
@@ -546,13 +570,7 @@ class DbTargetRegistry:
         anonymization = copy.deepcopy(target.get("anonymization", {}))
         limits = copy.deepcopy(target.get("limits", {}))
         allowed_tools = copy.deepcopy(target.get("allowed_tools", []))
-        runtime_allowed_tools = [
-            tool
-            for tool in allowed_tools
-            if tool != "db_write" or policy.get("write_policy") == "allow"
-        ]
-        if target.get("status") != "active":
-            runtime_allowed_tools = [tool for tool in runtime_allowed_tools if tool != "db_write"]
+        runtime_allowed_tools = _runtime_allowed_tools(allowed_tools, policy, target.get("status"))
 
         return {
             "target_id": target["target_id"],
@@ -567,12 +585,14 @@ class DbTargetRegistry:
             "policy": {
                 **policy,
                 "effective_write_enabled": policy.get("write_policy") == "allow" and target["status"] == "active",
+                "effective_ddl_enabled": bool(policy.get("ddl_enabled", False)) and target["status"] == "active",
             },
             "anonymization": anonymization,
             "limits": limits,
             "allowed_tools": allowed_tools,
             "runtime": {
                 "write_enabled": policy.get("write_policy") == "allow" and target["status"] == "active",
+                "ddl_enabled": bool(policy.get("ddl_enabled", False)) and target["status"] == "active",
                 "allowed_tools": runtime_allowed_tools,
                 "anonymization_required": bool(anonymization.get("enabled", False)),
             },
@@ -643,13 +663,7 @@ class DbTargetRegistry:
                 if target.get("status") == "active":
                     active_target_count += 1
                 policy = target.get("policy", {})
-                runtime_allowed_tools = [
-                    tool
-                    for tool in target.get("allowed_tools", [])
-                    if tool != "db_write" or policy.get("write_policy") == "allow"
-                ]
-                if target.get("status") != "active":
-                    runtime_allowed_tools = [tool for tool in runtime_allowed_tools if tool != "db_write"]
+                runtime_allowed_tools = _runtime_allowed_tools(target.get("allowed_tools", []), policy, target.get("status"))
                 targets.append(
                     {
                         "target_id": target["target_id"],
@@ -662,6 +676,7 @@ class DbTargetRegistry:
                         "read_enabled": bool(policy.get("read_enabled", True)),
                         "write_enabled": policy.get("write_policy") == "allow" and target["status"] == "active",
                         "write_policy": policy.get("write_policy", "deny"),
+                        "ddl_enabled": bool(policy.get("ddl_enabled", False)) and target["status"] == "active",
                         "anonymization_enabled": bool(target.get("anonymization", {}).get("enabled", False)),
                         "anonymization_mode": target.get("anonymization", {}).get("mode", "off"),
                         "llm_provider": target.get("anonymization", {}).get("provider", "none"),
