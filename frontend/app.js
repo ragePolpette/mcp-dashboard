@@ -3707,7 +3707,7 @@ function normalizeDbTargetAllowedTools(value) {
   return [];
 }
 
-const DB_TARGET_TOOL_OPTIONS = ["db_target_info", "db_policy_info", "db_read", "db_write"];
+const DB_TARGET_TOOL_OPTIONS = ["db_target_info", "db_policy_info", "db_read", "db_write", "db_ddl"];
 
 function normalizeDbTargetBinding(binding = {}, connectionVaultRef = "") {
   const vaultRef = normalizeDbTargetText(
@@ -3759,6 +3759,7 @@ function normalizeDbTargetRecord(raw = {}) {
     write_enabled: Boolean(
       raw.write_enabled ?? policy.effective_write_enabled ?? policy.write_enabled ?? raw.writeAllowed ?? false
     ),
+    ddl_enabled: Boolean(raw.ddl_enabled ?? policy.ddl_enabled ?? false),
     anonymization_enabled: Boolean(
       raw.anonymization_enabled ?? anonymization.enabled ?? raw.anonymizationEnabled ?? environment === "prod"
     ),
@@ -3789,6 +3790,7 @@ function defaultDbTargetDraft() {
     read_enabled: true,
     write_policy: "deny",
     write_enabled: false,
+    ddl_enabled: false,
     anonymization_enabled: false,
     anonymization_mode: "off",
     llm_provider: "none",
@@ -3807,7 +3809,7 @@ function isDbTargetHardFencedField(fieldId, target) {
   if (!isDbTargetProd(target)) {
     return false;
   }
-  return ["write_enabled"].includes(fieldId);
+  return ["write_enabled", "ddl_enabled"].includes(fieldId);
 }
 
 function normalizeDbTargetDraft(target) {
@@ -3837,6 +3839,10 @@ function normalizeDbTargetDraft(target) {
     draft.llm_model = "";
   }
   draft.write_enabled = draft.write_policy === "allow";
+  // Variazioni schema (DDL): mai su prod né su target anonimizzati.
+  if (isDbTargetProd(draft) || draft.anonymization_enabled) {
+    draft.ddl_enabled = false;
+  }
   return draft;
 }
 
@@ -3863,6 +3869,7 @@ function summarizeDbTargetPolicy(target) {
   return [
     target.read_enabled ? "read ON" : "read OFF",
     `write ${target.write_policy || (target.write_enabled ? "allow" : "deny")}`,
+    target.ddl_enabled ? "ddl ON" : "ddl OFF",
     target.anonymization_enabled ? `anon ${target.anonymization_mode || "on"}` : "anon OFF"
   ].join(" | ");
 }
@@ -4082,6 +4089,7 @@ function renderDbTargetsPanel() {
       <div class="db-target-field-grid">
         <label class="settings-toggle"><input data-db-target-field="read_enabled" type="checkbox" ${draft.read_enabled ? "checked" : ""}>Read enabled</label>
         <label class="settings-toggle"><input data-db-target-field="anonymization_enabled" type="checkbox" ${draft.anonymization_enabled ? "checked" : ""}>Anonymization enabled</label>
+        <label class="settings-toggle"><input id="dbTargetDdlInput" data-db-target-field="ddl_enabled" type="checkbox" ${draft.ddl_enabled ? "checked" : ""} ${prod || draft.anonymization_enabled ? "disabled" : ""}>Consenti variazioni schema (DDL)</label>
       </div>
       <div class="db-target-field-grid">
         <div class="db-target-field">
@@ -4109,6 +4117,7 @@ function renderDbTargetsPanel() {
       </div>
       ${draft.anonymization_enabled && draft.anonymization_mode === "deterministic" ? `<div class="db-target-inline-hint">Modo deterministic: solo regole, catalogo e floor sui valori; nessun provider LLM viene chiamato.</div>` : ""}
       ${prod ? `<div class="db-target-inline-hint">Target prod: scrittura disabilitata. Se disattivi l’anonimizzazione, le letture restituiscono i dati originali.</div>` : ""}
+      <div class="db-target-inline-hint">Variazioni schema (DDL): solo CREATE TABLE e ALTER TABLE su dbo, in due fasi con conferma esplicita. Non disponibile su prod né su target con anonimizzazione.</div>
     </div>
     <div class="db-target-editor-section">
       <h4>Limiti e Tool</h4>
@@ -4206,6 +4215,10 @@ function handleDbTargetDraftChange(event) {
     if (draft.write_enabled && !normalizeDbTargetAllowedTools(draft.allowed_tools).includes("db_write")) {
       draft.allowed_tools = [...normalizeDbTargetAllowedTools(draft.allowed_tools), "db_write"];
     }
+  }
+
+  if (field === "ddl_enabled" && draft.ddl_enabled && !normalizeDbTargetAllowedTools(draft.allowed_tools).includes("db_ddl")) {
+    draft.allowed_tools = [...normalizeDbTargetAllowedTools(draft.allowed_tools), "db_ddl"];
   }
 
   setDbTargetDraft(draft);
