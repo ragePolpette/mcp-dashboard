@@ -1658,7 +1658,19 @@ function renderMemoryAdminForAdvanced(serviceId) {
 
 function isDbQueryEvent(entry) {
   const eventName = String(entry?.event || "");
-  return eventName === "db.query.executed" || eventName === "query_in" || eventName === "query_out";
+  return (
+    eventName === "db.query.executed" ||
+    eventName === "query_in" ||
+    eventName === "query_out" ||
+    eventName === "db.query_out" ||
+    eventName === "db.query_failed"
+  );
+}
+
+// llm-sql-db-mcp writes {"event": "db.query_out", "payload": {...}}: the payload stays nested in fields.
+function unifiedQueryFields(entry) {
+  const { payload, ...rest } = entry?.fields || {};
+  return { ...rest, ...(payload && typeof payload === "object" ? payload : {}) };
 }
 
 function entryDisplayMessage(entry) {
@@ -1675,6 +1687,19 @@ function entryDisplayMessage(entry) {
     const rowCount = response.rowCount ?? "n/d";
     const suffix = response.truncated ? " | risultato troncato" : "";
     return `${tool} | ${rowCount} rows${suffix}`;
+  }
+
+  if (eventName === "db.query_out") {
+    const payload = unifiedQueryFields(entry);
+    const suffix = payload.truncated ? " | risultato troncato" : "";
+    const hash = payload.sql_hash ? ` | ${payload.sql_hash}` : "";
+    return `${payload.tool || "db"} | ${payload.row_count ?? "n/d"} rows${suffix}${hash}`;
+  }
+
+  if (eventName === "db.query_failed") {
+    const payload = unifiedQueryFields(entry);
+    const hash = payload.sql_hash ? ` | ${payload.sql_hash}` : "";
+    return `${payload.tool || "db"} | errore: ${payload.error || "n/d"}${hash}`;
   }
 
   if (eventName === "db.query.executed") {
@@ -1717,6 +1742,10 @@ function entryMetaPayload(entry) {
       row_count: response.rowCount ?? null,
       result_truncated: response.truncated ?? null
     };
+  }
+
+  if (eventName === "db.query_out" || eventName === "db.query_failed") {
+    return { ...base, ...unifiedQueryFields(entry) };
   }
 
   if (eventName === "db.query.executed") {

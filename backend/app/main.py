@@ -352,13 +352,81 @@ def _query_preview(sql_text: str, max_chars: int = 320) -> tuple[str, bool]:
     return f"{text[: max_chars - 1]}…", True
 
 
+def _event_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    """Event fields with the server's nested `payload` object flattened on top of them.
+
+    llm-sql-db-mcp writes `{"event": "db.query_out", "payload": {...}}`; the JSON log parser keeps the
+    payload as a single field, so the values the query views need are one level down.
+    """
+    fields = entry.get("fields") or {}
+    payload = fields.get("payload")
+    if isinstance(payload, dict):
+        return {**fields, **payload}
+    return fields
+
+
+def _unified_query_key(payload: dict[str, Any]) -> str:
+    """Pairs db.query_in with db.query_out/db.query_failed: by statement hash, else by tool."""
+    return str(payload.get("sql_hash") or f"tool:{payload.get('tool') or 'unknown'}")
+
+
 def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     pending_by_tool: dict[str, list[dict[str, Any]]] = {}
+    pending_unified: dict[str, list[dict[str, Any]]] = {}
     queries: list[dict[str, Any]] = []
 
     for entry in entries:
         event = str(entry.get("event") or "")
         fields = entry.get("fields") or {}
+
+        if event == "db.query_in":
+            payload = _event_fields(entry)
+            pending_unified.setdefault(_unified_query_key(payload), []).append(
+                {
+                    "target_id": payload.get("target_id"),
+                    "query_preview": payload.get("sql_preview"),
+                    "parameter_keys": payload.get("parameter_keys") or [],
+                }
+            )
+            continue
+
+        if event in {"db.query_out", "db.query_failed"}:
+            payload = _event_fields(entry)
+            pending_items = pending_unified.get(_unified_query_key(payload)) or []
+            pending = pending_items.pop(0) if pending_items else {}
+            sql_hash = payload.get("sql_hash")
+            failed = event == "db.query_failed"
+            error = str(payload.get("error") or "") if failed else ""
+            known_text = pending.get("query_preview")
+            if known_text:
+                preview = str(known_text)
+            elif sql_hash:
+                preview = f"hash {sql_hash} (testo SQL non registrato a questo livello di log)"
+            else:
+                preview = "(testo SQL non registrato a questo livello di log)"
+            if failed:
+                preview = f"{preview}\nERRORE: {error}" if error else f"{preview}\nERRORE"
+            queries.append(
+                {
+                    "timestamp": entry.get("timestamp"),
+                    "level": entry.get("level"),
+                    "tool": str(payload.get("tool") or "unknown"),
+                    "target_id": payload.get("target_id") or pending.get("target_id"),
+                    "mode": f"anon:{payload.get('anonymization_mode')}" if payload.get("anonymization_applied") else None,
+                    "row_count": payload.get("row_count"),
+                    "rows_affected": payload.get("rows_affected"),
+                    "result_truncated": payload.get("truncated"),
+                    "query_preview": preview,
+                    "query_full": None,
+                    "query_full_truncated": False,
+                    "parameter_keys": pending.get("parameter_keys") or [],
+                    "sql_hash": sql_hash,
+                    "status": "failed" if failed else "ok",
+                    "error": error or None,
+                    "source_path": entry.get("source_path"),
+                }
+            )
+            continue
 
         if event == "db.query.executed":
             queries.append(
@@ -587,10 +655,11 @@ def _compute_metrics(entries: list[dict[str, Any]]) -> dict[str, Any]:
                 elif event == "context.retrieved":
                     context_retrieved_today += 1
 
-        if event in {"db.query.executed", "query_out"}:
-            row_count_raw = fields.get("row_count")
-            if row_count_raw is None and isinstance(fields.get("response"), dict):
-                row_count_raw = fields["response"].get("rowCount")
+        if event in {"db.query.executed", "query_out", "db.query_out"}:
+            db_fields = _event_fields(entry) if event == "db.query_out" else fields
+            row_count_raw = db_fields.get("row_count")
+            if row_count_raw is None and isinstance(db_fields.get("response"), dict):
+                row_count_raw = db_fields["response"].get("rowCount")
             try:
                 row_count_value = float(row_count_raw)
                 db_row_counts.append(row_count_value)
