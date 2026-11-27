@@ -152,3 +152,37 @@ def test_db_metrics_count_unified_query_out_events():
 
     assert metrics["db_queries_count"] == 2
     assert metrics["db_avg_row_count"] == 3
+
+
+def test_query_out_with_sql_text_shows_the_full_statement_also_when_anonymized():
+    sql = "SELECT codice_fiscale FROM dbo.Anagrafica WHERE partita_iva = '01234567890'"
+    records = _build_query_records([
+        _out("2026-11-16T10:00:00.000Z", sql_hash=HASH_A, sql=sql, anonymization_applied=True, anonymization_mode="deterministic"),
+    ])
+
+    record = records[0]
+    assert record["query_preview"] == sql
+    assert record["query_full"] == sql
+    assert record["query_full_truncated"] is False
+    assert record["mode"] == "anon:deterministic"
+    assert HASH_A not in record["query_preview"]
+
+
+def test_long_sql_text_is_previewed_but_kept_in_full():
+    sql = "SELECT " + ", ".join(f"col{i}" for i in range(200)) + " FROM dbo.T"
+    record = _build_query_records([_out("2026-11-16T10:00:00.000Z", sql_hash=HASH_A, sql=sql)])[0]
+
+    assert record["query_full"] == sql
+    assert record["query_full_truncated"] is True
+    assert len(record["query_preview"]) <= 320
+
+
+def test_failed_query_with_sql_text_shows_statement_and_error():
+    entry = _entry("db.query_failed", {"tool": "db_read", "target_id": "dev-main", "sql_hash": HASH_A,
+                                       "sql": "SELECT x FROM dbo.Nope", "error": "boom"}, "2026-11-16T10:00:00.000Z")
+
+    record = _build_query_records([entry])[0]
+
+    assert record["query_full"] == "SELECT x FROM dbo.Nope"
+    assert record["query_preview"].startswith("SELECT x FROM dbo.Nope")
+    assert "boom" in record["query_preview"]

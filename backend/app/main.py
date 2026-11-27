@@ -397,8 +397,14 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             sql_hash = payload.get("sql_hash")
             failed = event == "db.query_failed"
             error = str(payload.get("error") or "") if failed else ""
+            # `sql` is the full statement (server option LOG_SQL_TEXT, on by default); without it only
+            # the hash, or the debug-level preview of the matching db.query_in, is known.
+            full_sql = str(payload.get("sql") or "")
+            full_truncated = False
             known_text = pending.get("query_preview")
-            if known_text:
+            if full_sql:
+                preview, full_truncated = _query_preview(full_sql)
+            elif known_text:
                 preview = str(known_text)
             elif sql_hash:
                 preview = f"hash {sql_hash} (testo SQL non registrato a questo livello di log)"
@@ -417,8 +423,8 @@ def _build_query_records(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "rows_affected": payload.get("rows_affected"),
                     "result_truncated": payload.get("truncated"),
                     "query_preview": preview,
-                    "query_full": None,
-                    "query_full_truncated": False,
+                    "query_full": full_sql or None,
+                    "query_full_truncated": full_truncated,
                     "parameter_keys": pending.get("parameter_keys") or [],
                     "sql_hash": sql_hash,
                     "status": "failed" if failed else "ok",
